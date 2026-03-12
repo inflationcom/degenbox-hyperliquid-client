@@ -1,0 +1,11 @@
+/bot
+/healthcheck
+bin/
+.env
+.env.*
+.keystore.json
+config.json
+*.log
+.DS_Store
+coverage.out
+coverage.html
