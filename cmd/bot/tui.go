@@ -344,11 +344,13 @@ func (m tuiModel) renderHeader() string {
 	}
 
 	if m.callerName != "" {
-		sb.WriteString(styleHeaderLabel.Render("  Caller") + styleHeaderValue.Render(m.callerName))
+		sb.WriteString(styleHeaderLabel.Render("  Source") + styleHeaderValue.Render(m.callerName))
 		sb.WriteString("\n")
-	}
-	if m.targetWallet != "" {
-		sb.WriteString(styleHeaderLabel.Render("  Target") + styleHeaderValue.Render(shortenAddr(m.targetWallet)))
+	} else if m.targetWallet != "" {
+		sb.WriteString(styleHeaderLabel.Render("  Source") + styleHeaderValue.Render(shortenAddr(m.targetWallet)+" (copytrade)"))
+		sb.WriteString("\n")
+	} else if m.connected {
+		sb.WriteString(styleHeaderLabel.Render("  Source") + lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render("no signal source linked"))
 		sb.WriteString("\n")
 	}
 
