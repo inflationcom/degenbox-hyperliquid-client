@@ -99,6 +99,78 @@ See [config.example.json](config.example.json) for all available options.
 | `HL_MAX_LEVERAGE` | Maximum allowed leverage |
 | `HL_MAX_ORDER_SIZE_USD` | Maximum order notional value |
 
+### API Wallets (Multi-Wallet)
+
+Hyperliquid lets you create **API wallets** — separate keys that can trade on behalf of your main wallet. This is useful for:
+
+- Running multiple bot instances with different settings
+- Keeping your main private key offline
+- Revoking bot access without moving funds
+
+All API wallets share the same balance and margin as your main wallet — no need to transfer funds.
+
+#### How it works
+
+| | Main wallet | API wallet |
+|---|---|---|
+| Holds funds | Yes | No (uses main wallet's balance) |
+| Can trade | Yes | Yes (on behalf of main wallet) |
+| Can withdraw | Yes | No |
+| Revokable | — | Yes, from Hyperliquid UI |
+
+#### Creating an API wallet
+
+1. Go to [app.hyperliquid.xyz](https://app.hyperliquid.xyz) → **Portfolio** → **API Wallets**
+2. Click **Create** — this generates a new private key
+3. **Save the private key** — it's only shown once
+
+#### Setup
+
+The setup wizard handles this automatically. When it asks for your private key, paste the **API wallet key** and answer **yes** when asked if it's an API wallet:
+
+```
+  Step 1/4: Private Key
+
+  Enter your wallet private key (hex, starts with 0x).
+  This can be your main wallet key or an API wallet key.
+
+  Key: 0x<your-api-wallet-key>
+
+  Key address: 0xABC...
+
+  Is this an API wallet (created on Hyperliquid)?
+  API wallet? [y/N]: y
+
+  Enter the main wallet address this API wallet is authorized for.
+  Main wallet (0x...): 0x<your-main-wallet-address>
+```
+
+You can also configure it manually in `.env`:
+
+```bash
+HL_PRIVATE_KEY=0x<api-wallet-private-key>
+HL_WALLET_ADDR=0x<main-wallet-address>
+HL_AGENT_MODE=true
+```
+
+#### Running multiple instances
+
+To run multiple bots (e.g. different callers, different risk settings), create a separate directory for each:
+
+```bash
+# Instance 1
+mkdir ~/bot-aggressive
+cp bot ~/bot-aggressive/
+cd ~/bot-aggressive && ./bot setup
+
+# Instance 2
+mkdir ~/bot-conservative
+cp bot ~/bot-conservative/
+cd ~/bot-conservative && ./bot setup
+```
+
+Each instance gets its own `.env`, `config.json`, and registration on the dashboard. Run them in separate terminal sessions (or use tmux/screen).
+
 ### Encrypted Keystore
 
 Instead of storing your private key in `.env`, you can encrypt it:

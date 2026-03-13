@@ -235,7 +235,7 @@ func (m tuiModel) renderHeader() string {
 		sb.WriteString("\n")
 	}
 
-	sep := styleSeparator.Render("  " + strings.Repeat("─", max(0, min(m.width-4, 44))))
+	sep := styleSeparator.Render("  " + strings.Repeat("─", max(0, min(m.width-4, 50))))
 	sb.WriteString(sep)
 	sb.WriteString("\n")
 
@@ -299,7 +299,7 @@ func (m tuiModel) renderFooter() string {
 		styleKeybindKey.Render("[s]") + styleKeybindHint.Render("ettings  ") +
 		styleKeybindKey.Render("[q]") + styleKeybindHint.Render("uit")
 
-	return sep + "\n" + status + "\n" + hints
+	return sep + "\n" + status + "\n\n" + hints
 }
 
 func (m tuiModel) renderPositionsView() string {
@@ -322,7 +322,7 @@ func (m tuiModel) headerLines() int {
 	return lines
 }
 
-const footerLines = 3 // separator + status + keybinds
+const footerLines = 4 // separator + status + blank + keybinds
 
 func (m tuiModel) contentHeight() int {
 	h := m.height - m.headerLines() - footerLines

@@ -211,11 +211,15 @@ func (w *setupWizard) runFresh(configPath string) {
 	fmt.Println("  Step 1/4: Private Key")
 	fmt.Println()
 	fmt.Println("  Enter your wallet private key (hex, starts with 0x).")
+	fmt.Println("  This can be your main wallet key or an API wallet key.")
 	fmt.Println("  This will be saved to .env, NOT to config.json.")
 	fmt.Println()
 
 	var privateKey string
 	var signer *hyperliquid.Signer
+	var isAgentMode bool
+	var mainWalletAddr string
+
 	for {
 		privateKey = w.promptString("  Key", "", true)
 		var err error
@@ -226,9 +230,47 @@ func (w *setupWizard) runFresh(configPath string) {
 		fmt.Println("  " + color("Invalid key. Must be a 64-character hex string (with or without 0x prefix).", colorRed))
 		fmt.Println()
 	}
-	walletAddress := signer.Address()
+	keyAddress := signer.Address()
 	fmt.Println()
-	fmt.Printf("  Wallet:  %s\n", walletAddress)
+	fmt.Printf("  Key address: %s\n", keyAddress)
+	fmt.Println()
+
+	fmt.Println("  Is this an " + color("API wallet", colorBold) + " (created on Hyperliquid)?")
+	fmt.Println("  If yes, it trades on behalf of your main wallet (shared balance).")
+	fmt.Println("  If this is your main wallet key, just press Enter.")
+	fmt.Println()
+	isAgent := w.promptYesNo("  API wallet?", false)
+
+	if isAgent {
+		fmt.Println()
+		fmt.Println("  Enter the " + color("main wallet address", colorBold) + " this API wallet is authorized for.")
+		fmt.Println("  (The wallet that holds your funds on Hyperliquid)")
+		fmt.Println()
+		for {
+			mainWalletAddr = w.promptString("  Main wallet (0x...)", "", true)
+			if len(mainWalletAddr) == 42 && strings.HasPrefix(mainWalletAddr, "0x") {
+				break
+			}
+			fmt.Println("  " + color("Must be a 0x-prefixed Ethereum address (42 characters).", colorRed))
+			fmt.Println()
+		}
+		isAgentMode = true
+
+		var err error
+		signer, err = hyperliquid.NewAgentSigner(privateKey, mainWalletAddr, net)
+		if err != nil {
+			die("failed to create agent signer: %v", err)
+		}
+	}
+
+	walletAddress := signer.SourceAddress()
+	fmt.Println()
+	if isAgentMode {
+		fmt.Printf("  API wallet:   %s\n", keyAddress)
+		fmt.Printf("  Main wallet:  %s\n", mainWalletAddr)
+	} else {
+		fmt.Printf("  Wallet:  %s\n", walletAddress)
+	}
 	fmt.Printf("  Network: %s\n", strings.ToUpper(network))
 	fmt.Println()
 
@@ -312,6 +354,8 @@ func (w *setupWizard) runFresh(configPath string) {
 	cfg := config.DefaultConfig()
 	cfg.Network = network
 	cfg.ClientName = clientName
+	cfg.IsAgentMode = isAgentMode
+	cfg.WalletAddr = mainWalletAddr
 
 	if relayURL != "" {
 		cfg.Relay.ServerURL = relayURL
@@ -333,6 +377,12 @@ func (w *setupWizard) runFresh(configPath string) {
 
 	envLines := []string{
 		fmt.Sprintf("HL_PRIVATE_KEY=%s", privateKey),
+	}
+	if isAgentMode {
+		envLines = append(envLines,
+			fmt.Sprintf("HL_WALLET_ADDR=%s", mainWalletAddr),
+			"HL_AGENT_MODE=true",
+		)
 	}
 	if relayURL != "" {
 		envLines = append(envLines,
@@ -430,6 +480,28 @@ func (w *setupWizard) promptFloat(prompt string, defaultVal float64, required bo
 			continue
 		}
 		return val
+	}
+}
+
+func (w *setupWizard) promptYesNo(prompt string, defaultVal bool) bool {
+	defStr := "y/N"
+	if defaultVal {
+		defStr = "Y/n"
+	}
+	for {
+		fmt.Printf("%s [%s]: ", prompt, defStr)
+		line, _ := w.reader.ReadString('\n')
+		line = strings.TrimSpace(strings.ToLower(line))
+		if line == "" {
+			return defaultVal
+		}
+		if line == "y" || line == "yes" {
+			return true
+		}
+		if line == "n" || line == "no" {
+			return false
+		}
+		fmt.Println("  Please enter y or n.")
 	}
 }
 
