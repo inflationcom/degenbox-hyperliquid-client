@@ -1,22 +1,13 @@
-<p align="center">
-  <img src="assets/logo.png" width="120" alt="DegenBox" />
-</p>
+<h1>
+  <img src="assets/logo.png" width="36" alt="" />&nbsp;
+  DegenBox
+</h1>
 
-<h1 align="center">DegenBox</h1>
+**Self-custodial trading executor for [Hyperliquid](https://hyperliquid.xyz)**
 
-<p align="center">
-  <strong>Self-custodial trading executor for Hyperliquid</strong>
-</p>
-
-<p align="center">
-  <a href="https://go.dev/dl/"><img src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white" alt="Go 1.24+" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
-  <a href="https://github.com/inflationcom/degenbox-hyperliquid-client/releases/latest"><img src="https://img.shields.io/github/v/release/inflationcom/degenbox-hyperliquid-client?label=release&color=5CDB95" alt="Latest Release" /></a>
-</p>
-
-<p align="center">
-  <img src="assets/screenshot.png" width="700" alt="DegenBox TUI" />
-</p>
+<a href="https://go.dev/dl/"><img src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white" alt="Go 1.24+" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+<a href="https://github.com/inflationcom/degenbox-hyperliquid-client/releases/latest"><img src="https://img.shields.io/github/v/release/inflationcom/degenbox-hyperliquid-client?label=release&color=5CDB95" alt="Latest Release" /></a>
 
 ---
 
