@@ -308,6 +308,11 @@ func (w *setupWizard) runFresh(configPath string) {
 		fmt.Println(color("OK", colorGreen))
 		fmt.Printf("  Client ID: %d\n", result.ClientID)
 
+		// Use the name the server stored (dashboard name takes priority)
+		if result.Name != "" {
+			clientName = result.Name
+		}
+
 		relayURL = httpToWS(defaultServerURL)
 		relayAPIKey = result.APIKey
 		relayClientID = result.ClientID

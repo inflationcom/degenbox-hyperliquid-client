@@ -12,6 +12,7 @@ import (
 
 type RegistrationResult struct {
 	ClientID        int    `json:"client_id"`
+	Name            string `json:"name"`
 	APIKey          string `json:"api_key"`
 	Subscriptions   int    `json:"subscriptions"`
 	ServerPublicKey string `json:"server_public_key"` // Ed25519 hex public key
