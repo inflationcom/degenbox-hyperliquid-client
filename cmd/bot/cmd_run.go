@@ -90,6 +90,13 @@ func cmdRun(args []string) {
 			if cfg == nil {
 				cfg = config.DefaultConfig()
 			}
+			// Clear stale env vars so loadDotEnv picks up the fresh .env
+			os.Unsetenv("HL_PRIVATE_KEY")
+			os.Unsetenv("HL_WALLET_ADDR")
+			os.Unsetenv("HL_AGENT_MODE")
+			os.Unsetenv("HL_RELAY_URL")
+			os.Unsetenv("HL_RELAY_API_KEY")
+			os.Unsetenv("HL_RELAY_CLIENT_ID")
 			loadDotEnv()
 			config.LoadFromEnv(cfg)
 			if cfg.PrivateKey == "" {
