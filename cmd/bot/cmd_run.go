@@ -240,6 +240,10 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 		}
 	})
 
+	relayClient.OnAuthInfo(func(msg relay.AuthInfoMsg) {
+		p.Send(authInfoMsg(msg))
+	})
+
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()

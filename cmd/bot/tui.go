@@ -34,6 +34,8 @@ type nameUpdateMsg string
 
 type versionInfoMsg relay.VersionInfoMsg
 
+type authInfoMsg relay.AuthInfoMsg
+
 type clockTickMsg time.Time
 
 type updateDoneMsg struct{}
@@ -45,6 +47,8 @@ type tuiModel struct {
 	instanceName string
 	walletAddr   string
 	network      string
+	callerName   string
+	targetWallet string
 
 	accountState *hyperliquid.ClearinghouseState
 	connected    bool
@@ -199,6 +203,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case nameUpdateMsg:
 		m.instanceName = string(msg)
 
+	case authInfoMsg:
+		if len(msg.Callers) > 0 {
+			m.callerName = msg.Callers[0]
+		}
+		m.targetWallet = msg.WalletAddress
+
 	case versionInfoMsg:
 		m.updateAvailable = msg.UpdateAvailable
 		m.latestVersion = msg.LatestVersion
@@ -289,6 +299,8 @@ func (m tuiModel) renderHeader() string {
 
 	sb.WriteString("  ")
 	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render(m.instanceName))
+	sb.WriteString("  ")
+	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(version))
 	sb.WriteString("\n")
 
 	if m.updateAvailable && m.latestVersion != "" {
@@ -328,6 +340,15 @@ func (m tuiModel) renderHeader() string {
 		sb.WriteString(styleHeaderLabel.Render("  Equity") + styleHeaderValue.Render(pad(equity, 16)) + styleHeaderLabel.Render("Margin") + "  " + styleHeaderValue.Render(margin+" ("+marginPct+")"))
 		sb.WriteString("\n")
 		sb.WriteString(styleHeaderLabel.Render("  Free") + styleHeaderValue.Render(pad(free, 16)) + styleHeaderLabel.Render("Positions") + "  " + styleHeaderValue.Render(fmt.Sprintf("%d", positions)))
+		sb.WriteString("\n")
+	}
+
+	if m.callerName != "" {
+		sb.WriteString(styleHeaderLabel.Render("  Caller") + styleHeaderValue.Render(m.callerName))
+		sb.WriteString("\n")
+	}
+	if m.targetWallet != "" {
+		sb.WriteString(styleHeaderLabel.Render("  Target") + styleHeaderValue.Render(shortenAddr(m.targetWallet)))
 		sb.WriteString("\n")
 	}
 
@@ -402,6 +423,12 @@ func (m tuiModel) headerLines() int {
 	lines += 2 // separator + wallet/network
 	if m.accountState != nil {
 		lines += 2 // equity/margin + free/positions
+	}
+	if m.callerName != "" {
+		lines += 1
+	}
+	if m.targetWallet != "" {
+		lines += 1
 	}
 	lines += 1 // bottom separator
 	return lines

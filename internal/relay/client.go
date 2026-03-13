@@ -45,6 +45,7 @@ type Client struct {
 	recorder       TradeRecorder
 	onConfigUpdate func(ConfigUpdateMsg)
 	onVersionInfo  func(VersionInfoMsg)
+	onAuthInfo     func(AuthInfoMsg)
 	execQueue      chan *ExecutionInstruction
 }
 
@@ -112,6 +113,10 @@ func (c *Client) OnConfigUpdate(fn func(ConfigUpdateMsg)) {
 
 func (c *Client) OnVersionInfo(fn func(VersionInfoMsg)) {
 	c.onVersionInfo = fn
+}
+
+func (c *Client) OnAuthInfo(fn func(AuthInfoMsg)) {
+	c.onAuthInfo = fn
 }
 
 func (c *Client) Stop() {
@@ -230,6 +235,14 @@ func (c *Client) connect() error {
 
 	c.connected.Store(true)
 	slog.Info("relay authenticated", "session_id", result.SessionID)
+
+	if c.onAuthInfo != nil {
+		c.onAuthInfo(AuthInfoMsg{
+			Callers:       result.Callers,
+			WalletAddress: result.WalletAddress,
+		})
+	}
+
 	return nil
 }
 

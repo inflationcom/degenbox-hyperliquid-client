@@ -38,9 +38,11 @@ type authMsg struct {
 
 type authResultMsg struct {
 	relayMsg
-	Success   bool   `json:"success"`
-	Error     string `json:"error,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
+	Success       bool     `json:"success"`
+	Error         string   `json:"error,omitempty"`
+	SessionID     string   `json:"session_id,omitempty"`
+	Callers       []string `json:"callers,omitempty"`
+	WalletAddress string   `json:"wallet_address,omitempty"`
 }
 
 type ExecutionInstruction struct {
@@ -96,6 +98,11 @@ type ConfigUpdateMsg struct {
 type VersionInfoMsg struct {
 	LatestVersion   string `json:"latest_version"`
 	UpdateAvailable bool   `json:"update_available"`
+}
+
+type AuthInfoMsg struct {
+	Callers       []string `json:"callers"`
+	WalletAddress string   `json:"wallet_address"`
 }
 
 func parseType(data []byte) string {
