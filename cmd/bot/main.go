@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	_ "golang.org/x/crypto/x509roots/fallback"
 )
 
 var (

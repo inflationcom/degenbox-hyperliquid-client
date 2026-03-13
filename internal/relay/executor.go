@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -88,6 +89,26 @@ func (c *Client) executePlaceOrder(ctx context.Context, market string, step Exec
 	resp, err := c.hlClient.PlaceOrder(ctx, step.Orders, grouping)
 	if err != nil {
 		return StepResult{Action: step.Action, Success: false, Error: err.Error()}
+	}
+
+	// Check individual order statuses — a batch can return "ok" at HTTP level
+	// but have individual order errors (e.g. entry succeeds, SL fails)
+	if resp != nil {
+		for i, status := range resp.Statuses {
+			if status.Error != "" {
+				slog.Error("order failed within batch",
+					"market", market,
+					"order_index", i,
+					"error", status.Error,
+				)
+				return StepResult{
+					Action:   step.Action,
+					Success:  false,
+					Error:    fmt.Sprintf("order %d/%d failed: %s", i+1, len(resp.Statuses), status.Error),
+					Response: resp,
+				}
+			}
+		}
 	}
 
 	return StepResult{Action: step.Action, Success: true, Response: resp}

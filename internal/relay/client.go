@@ -45,6 +45,7 @@ type Client struct {
 	recorder       TradeRecorder
 	onConfigUpdate func(ConfigUpdateMsg)
 	onVersionInfo  func(VersionInfoMsg)
+	execQueue      chan *ExecutionInstruction
 }
 
 func NewClient(cfg Config, hlClient *hyperliquid.Client, validator *RiskValidator, recorder TradeRecorder) (*Client, error) {
@@ -57,6 +58,7 @@ func NewClient(cfg Config, hlClient *hyperliquid.Client, validator *RiskValidato
 		rateLimit:      newRateLimiter(validator.limits.MaxPerMinute),
 		reconnectDelay: time.Second,
 		maxReconnect:   30 * time.Second,
+		execQueue:      make(chan *ExecutionInstruction, 16),
 	}
 
 	if cfg.ServerPublicKey != "" {
@@ -76,11 +78,28 @@ func NewClient(cfg Config, hlClient *hyperliquid.Client, validator *RiskValidato
 func (c *Client) Start(ctx context.Context) {
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	c.wg.Add(1)
+	c.wg.Add(2)
 	go func() {
 		defer c.wg.Done()
 		c.connectLoop()
 	}()
+	go func() {
+		defer c.wg.Done()
+		c.execWorker()
+	}()
+}
+
+// execWorker processes instructions sequentially to prevent concurrent
+// execution races (e.g. two entries for the same market at once).
+func (c *Client) execWorker() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case instr := <-c.execQueue:
+			c.executeInstruction(instr)
+		}
+	}
 }
 
 func (c *Client) Connected() bool {
@@ -286,12 +305,14 @@ func (c *Client) handleInstruction(data []byte) {
 		return
 	}
 
-	if msg.Timestamp > 0 {
-		age := time.Now().UnixMilli() - msg.Timestamp
-		if age > 60_000 || age < -10_000 {
-			slog.Warn("stale instruction rejected", "id", instr.InstructionID, "age_ms", age)
-			return
-		}
+	if msg.Timestamp <= 0 {
+		slog.Warn("instruction rejected: missing timestamp", "id", instr.InstructionID)
+		return
+	}
+	age := time.Now().UnixMilli() - msg.Timestamp
+	if age > 60_000 || age < -10_000 {
+		slog.Warn("stale instruction rejected", "id", instr.InstructionID, "age_ms", age)
+		return
 	}
 
 	if c.serverPubKey != nil {
@@ -350,7 +371,16 @@ func (c *Client) handleInstruction(data []byte) {
 		return
 	}
 
-	go c.executeInstruction(instr)
+	select {
+	case c.execQueue <- instr:
+	default:
+		slog.Error("execution queue full, instruction dropped", "id", instr.InstructionID)
+		c.sendJSON(instructionResultMsg{
+			relayMsg:      relayMsg{Type: "instruction_result", Timestamp: time.Now().UnixMilli()},
+			InstructionID: instr.InstructionID,
+			Results:       []StepResult{{Action: "queue", Success: false, Error: "execution queue full"}},
+		})
+	}
 }
 
 func (c *Client) oracleRefreshLoop(done <-chan struct{}) {
