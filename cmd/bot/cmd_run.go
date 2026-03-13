@@ -54,7 +54,7 @@ func cmdRun(args []string) {
 	}
 
 	// Open log file early so pre-TUI logs are captured
-	logFile, err := os.OpenFile("degenbox.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile("degenbox.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not open degenbox.log: %v\n", err)
 	}
@@ -269,12 +269,28 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 		signal.Stop(sigCh)
 	}()
 
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		return fmt.Errorf("TUI error: %w", err)
 	}
 
 	relayClient.Stop()
 	os.Remove(heartbeatPath())
+
+	if fm, ok := finalModel.(tuiModel); ok && fm.updateCompleted {
+		if logFile != nil {
+			logFile.Close()
+		}
+		fmt.Println("\nRestarting with new version...")
+		if err := reExecSelf(); err != nil {
+			if err.Error() == "windows_restart_required" {
+				fmt.Println("Update complete! Please restart the bot.")
+				return nil
+			}
+			return fmt.Errorf("restart failed: %w", err)
+		}
+		return nil // unreachable on Unix (syscall.Exec replaces process)
+	}
 
 	fmt.Println("\nShutdown complete. Logs saved to degenbox.log")
 	return nil

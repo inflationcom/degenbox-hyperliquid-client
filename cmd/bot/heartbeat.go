@@ -42,7 +42,7 @@ func writeHeartbeat(connected bool, state *hyperliquid.ClearinghouseState) {
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(heartbeatPath(), data, 0644); err != nil {
+	if err := os.WriteFile(heartbeatPath(), data, 0600); err != nil {
 		slog.Debug("heartbeat write failed", "error", err)
 	}
 }

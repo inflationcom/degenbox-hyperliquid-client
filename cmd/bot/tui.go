@@ -19,6 +19,8 @@ const (
 	viewTrades
 	viewPositions
 	viewSettings
+	viewUpdateConfirm
+	viewUpdateProgress
 )
 
 const maxLogLines = 1000
@@ -33,6 +35,9 @@ type nameUpdateMsg string
 type versionInfoMsg relay.VersionInfoMsg
 
 type clockTickMsg time.Time
+
+type updateDoneMsg struct{}
+type updateErrorMsg struct{ err error }
 
 type tuiModel struct {
 	width, height int
@@ -57,6 +62,9 @@ type tuiModel struct {
 
 	updateAvailable bool
 	latestVersion   string
+	updateStatus    string // "downloading", "replacing", "restarting", "done", "error"
+	updateError     string
+	updateCompleted bool
 
 	quitting bool
 	quitFunc func()
@@ -107,21 +115,58 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			m.quitting = true
-			if m.quitFunc != nil {
-				m.quitFunc()
+		switch m.activeView {
+		case viewUpdateConfirm:
+			switch msg.String() {
+			case "y":
+				m.activeView = viewUpdateProgress
+				m.updateStatus = "downloading"
+				return m, m.startUpdate()
+			case "n", "esc":
+				m.activeView = viewLogs
+			case "q", "ctrl+c":
+				m.quitting = true
+				if m.quitFunc != nil {
+					m.quitFunc()
+				}
+				return m, tea.Quit
 			}
-			return m, tea.Quit
-		case "t":
-			m.activeView = viewTrades
-		case "p":
-			m.activeView = viewPositions
-		case "s":
-			m.activeView = viewSettings
-		case "esc", "enter":
-			m.activeView = viewLogs
+		case viewUpdateProgress:
+			switch msg.String() {
+			case "esc":
+				if m.updateStatus == "error" {
+					m.activeView = viewLogs
+				}
+			case "q", "ctrl+c":
+				if m.updateStatus == "error" {
+					m.quitting = true
+					if m.quitFunc != nil {
+						m.quitFunc()
+					}
+					return m, tea.Quit
+				}
+			}
+		default:
+			switch msg.String() {
+			case "q", "ctrl+c":
+				m.quitting = true
+				if m.quitFunc != nil {
+					m.quitFunc()
+				}
+				return m, tea.Quit
+			case "t":
+				m.activeView = viewTrades
+			case "p":
+				m.activeView = viewPositions
+			case "s":
+				m.activeView = viewSettings
+			case "u":
+				if m.updateAvailable {
+					m.activeView = viewUpdateConfirm
+				}
+			case "esc", "enter":
+				m.activeView = viewLogs
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -157,6 +202,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case versionInfoMsg:
 		m.updateAvailable = msg.UpdateAvailable
 		m.latestVersion = msg.LatestVersion
+
+	case updateDoneMsg:
+		m.updateStatus = "restarting"
+		m.updateCompleted = true
+		m.quitting = true
+		return m, tea.Quit
+
+	case updateErrorMsg:
+		m.updateStatus = "error"
+		m.updateError = msg.err.Error()
 
 	case clockTickMsg:
 		m.clock = time.Time(msg)
@@ -200,6 +255,14 @@ func (m tuiModel) View() string {
 		title := styleViewTitle.Render("  Settings")
 		body := renderSettings(m.settings, m.connected)
 		content = title + "\n" + body
+	case viewUpdateConfirm:
+		title := styleViewTitle.Render("  Update")
+		body := renderUpdateConfirm(m.latestVersion, version)
+		content = title + "\n" + body
+	case viewUpdateProgress:
+		title := styleViewTitle.Render("  Update")
+		body := renderUpdateProgress(m.updateStatus, m.updateError)
+		content = title + "\n" + body
 	default:
 		content = m.logView.View()
 	}
@@ -231,7 +294,7 @@ func (m tuiModel) renderHeader() string {
 	if m.updateAvailable && m.latestVersion != "" {
 		sb.WriteString("  ")
 		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFCC00")).Render(
-			fmt.Sprintf("Update available: %s  (current: %s)", m.latestVersion, version)))
+			fmt.Sprintf("Update available: %s → %s  — press [u] to update", version, m.latestVersion)))
 		sb.WriteString("\n")
 	}
 
@@ -294,10 +357,32 @@ func (m tuiModel) renderFooter() string {
 
 	status := " " + styleStatusBar.Render(strings.Join(statusParts, " │ "))
 
-	hints := " " + styleKeybindKey.Render("[t]") + styleKeybindHint.Render("rades  ") +
-		styleKeybindKey.Render("[p]") + styleKeybindHint.Render("ositions  ") +
-		styleKeybindKey.Render("[s]") + styleKeybindHint.Render("ettings  ") +
-		styleKeybindKey.Render("[q]") + styleKeybindHint.Render("uit")
+	var hints string
+	switch m.activeView {
+	case viewUpdateConfirm:
+		hints = " " + styleKeybindKey.Render("[y]") + styleKeybindHint.Render("es  ") +
+			styleKeybindKey.Render("[n]") + styleKeybindHint.Render("o")
+	case viewUpdateProgress:
+		if m.updateStatus == "error" {
+			hints = " " + styleKeybindKey.Render("[esc]") + styleKeybindHint.Render(" back")
+		} else {
+			hints = " " + styleKeybindHint.Render("updating...")
+		}
+	case viewLogs:
+		hints = " " + styleKeybindKey.Render("[t]") + styleKeybindHint.Render("rades  ") +
+			styleKeybindKey.Render("[p]") + styleKeybindHint.Render("ositions  ") +
+			styleKeybindKey.Render("[s]") + styleKeybindHint.Render("ettings  ")
+		if m.updateAvailable {
+			hints += styleKeybindKey.Render("[u]") + styleKeybindHint.Render("pdate  ")
+		}
+		hints += styleKeybindKey.Render("[q]") + styleKeybindHint.Render("uit (stop bot)")
+	default: // trades, positions, settings
+		hints = " " + styleKeybindKey.Render("[esc]") + styleKeybindHint.Render(" back  ")
+		if m.updateAvailable {
+			hints += styleKeybindKey.Render("[u]") + styleKeybindHint.Render("pdate  ")
+		}
+		hints += styleKeybindKey.Render("[q]") + styleKeybindHint.Render("uit (stop bot)")
+	}
 
 	return sep + "\n" + status + "\n\n" + hints
 }
@@ -330,4 +415,13 @@ func (m tuiModel) contentHeight() int {
 		h = 1
 	}
 	return h
+}
+
+func (m tuiModel) startUpdate() tea.Cmd {
+	return func() tea.Msg {
+		if err := performUpdate(); err != nil {
+			return updateErrorMsg{err: err}
+		}
+		return updateDoneMsg{}
+	}
 }

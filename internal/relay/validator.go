@@ -110,11 +110,11 @@ func (v *RiskValidator) validateOrder(order hyperliquid.OrderWire) error {
 		return fmt.Errorf("order notional $%.0f exceeds limit $%.0f", notional, v.limits.MaxOrderSizeUSD)
 	}
 
-	if order.T.Trigger == nil {
-		oraclePxStr, oracleErr := v.hlClient.GetOraclePrice(market)
-		if oracleErr == nil {
-			oraclePx, parseErr := strconv.ParseFloat(oraclePxStr, 64)
-			if parseErr == nil && oraclePx > 0 {
+	oraclePxStr, oracleErr := v.hlClient.GetOraclePrice(market)
+	if oracleErr == nil {
+		oraclePx, parseErr := strconv.ParseFloat(oraclePxStr, 64)
+		if parseErr == nil && oraclePx > 0 {
+			if order.T.Trigger == nil {
 				deviation := math.Abs(price-oraclePx) / oraclePx * 100
 				if deviation > v.limits.MaxPriceDevPct {
 					hint := ""
@@ -123,6 +123,17 @@ func (v *RiskValidator) validateOrder(order hyperliquid.OrderWire) error {
 					}
 					return fmt.Errorf("price %s deviates %.1f%% from oracle %s (max %.1f%%)%s",
 						order.P, deviation, oraclePxStr, v.limits.MaxPriceDevPct, hint)
+				}
+			} else {
+				triggerPx, tErr := strconv.ParseFloat(order.T.Trigger.TriggerPx, 64)
+				if tErr != nil || triggerPx <= 0 {
+					return fmt.Errorf("invalid trigger price: %s", order.T.Trigger.TriggerPx)
+				}
+				deviation := math.Abs(triggerPx-oraclePx) / oraclePx * 100
+				maxDev := v.limits.MaxPriceDevPct * 2
+				if deviation > maxDev {
+					return fmt.Errorf("trigger price %s deviates %.1f%% from oracle %s (max %.1f%%)",
+						order.T.Trigger.TriggerPx, deviation, oraclePxStr, maxDev)
 				}
 			}
 		}

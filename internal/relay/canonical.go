@@ -95,13 +95,6 @@ func sortedStringify(v any) string {
 		}
 		return "{" + strings.Join(parts, ",") + "}"
 
-	case []map[string]any:
-		items := make([]string, len(val))
-		for i, item := range val {
-			items[i] = sortedStringify(item)
-		}
-		return "[" + strings.Join(items, ",") + "]"
-
 	case []any:
 		items := make([]string, len(val))
 		for i, item := range val {
