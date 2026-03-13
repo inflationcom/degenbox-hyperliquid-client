@@ -207,7 +207,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.Callers) > 0 {
 			m.callerName = msg.Callers[0]
 		}
-		m.targetWallet = msg.WalletAddress
+		m.targetWallet = msg.CopytradeTarget
 
 	case versionInfoMsg:
 		m.updateAvailable = msg.UpdateAvailable

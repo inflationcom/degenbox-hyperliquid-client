@@ -238,8 +238,8 @@ func (c *Client) connect() error {
 
 	if c.onAuthInfo != nil {
 		c.onAuthInfo(AuthInfoMsg{
-			Callers:       result.Callers,
-			WalletAddress: result.WalletAddress,
+			Callers:         result.Callers,
+			CopytradeTarget: result.CopytradeTarget,
 		})
 	}
 
