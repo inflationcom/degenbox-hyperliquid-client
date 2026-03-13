@@ -1,12 +1,14 @@
 FROM golang:1.24-alpine AS builder
 
+ARG VERSION=dev
+
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 go build -ldflags "-s -w" -o /bot ./cmd/bot
+RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION} -X main.buildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -s -w" -o /bot ./cmd/bot
 RUN CGO_ENABLED=0 go build -ldflags "-s -w" -o /healthcheck ./cmd/healthcheck
 
 FROM alpine:3.21

@@ -1,6 +1,7 @@
 /bot
 /healthcheck
 bin/
+dist/
 .env
 .env.*
 .keystore.json

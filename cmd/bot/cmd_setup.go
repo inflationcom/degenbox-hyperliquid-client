@@ -20,16 +20,19 @@ const defaultServerURL = "https://scheme24.com"
 func cmdSetup(args []string) {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	configPath := fs.String("config", "config.json", "Config file output path")
+	testnet := fs.Bool("testnet", false, "Use testnet instead of mainnet")
 	fs.Parse(args)
 
 	w := &setupWizard{
-		reader: bufio.NewReader(os.Stdin),
+		reader:  bufio.NewReader(os.Stdin),
+		testnet: *testnet,
 	}
 	w.run(*configPath)
 }
 
 type setupWizard struct {
-	reader *bufio.Reader
+	reader  *bufio.Reader
+	testnet bool
 }
 
 func (w *setupWizard) run(configPath string) {
@@ -195,27 +198,21 @@ func readEnvFile(path string) map[string]string {
 }
 
 func (w *setupWizard) runFresh(configPath string) {
-	fmt.Println("  Step 1/7: Network")
-	fmt.Println()
-	fmt.Println("  [1] Testnet (recommended to start)")
-	fmt.Println("  [2] Mainnet")
-	fmt.Println()
-	networkChoice := w.promptChoice("  Choice", 1, 2, 1)
-	network := "testnet"
-	if networkChoice == 2 {
-		network = "mainnet"
+	network := "mainnet"
+	if w.testnet {
+		network = "testnet"
 	}
-	fmt.Println()
+	net := hyperliquid.Mainnet
+	if w.testnet {
+		net = hyperliquid.Testnet
+	}
 
-	fmt.Println("  Step 2/7: Private Key")
+	// Step 1: Private Key
+	fmt.Println("  Step 1/4: Private Key")
 	fmt.Println()
 	fmt.Println("  Enter your wallet private key (hex, starts with 0x).")
 	fmt.Println("  This will be saved to .env, NOT to config.json.")
 	fmt.Println()
-	net := hyperliquid.Testnet
-	if network == "mainnet" {
-		net = hyperliquid.Mainnet
-	}
 
 	var privateKey string
 	var signer *hyperliquid.Signer
@@ -226,125 +223,76 @@ func (w *setupWizard) runFresh(configPath string) {
 		if err == nil {
 			break
 		}
-		fmt.Println("  " + color("Invalid key. Make sure it's a 64-character hex string (with or without 0x prefix).", colorRed))
+		fmt.Println("  " + color("Invalid key. Must be a 64-character hex string (with or without 0x prefix).", colorRed))
 		fmt.Println()
 	}
 	walletAddress := signer.Address()
-	fmt.Printf("\n  Wallet address: %s\n", walletAddress)
+	fmt.Println()
+	fmt.Printf("  Wallet:  %s\n", walletAddress)
+	fmt.Printf("  Network: %s\n", strings.ToUpper(network))
 	fmt.Println()
 
-	fmt.Println("  Step 3/7: Wallet Mode")
+	// Step 2: Registration Token
+	fmt.Println("  Step 2/4: Signal Server")
 	fmt.Println()
-	fmt.Println("  [1] Direct wallet (your own key)")
-	fmt.Println("  [2] Agent wallet (delegated from another wallet)")
+	fmt.Println("  Paste your registration token from the dashboard.")
+	fmt.Println("  (Wallets page > Add Wallet > Generate)")
 	fmt.Println()
-	modeChoice := w.promptChoice("  Choice", 1, 2, 1)
-	isAgent := modeChoice == 2
-	walletAddr := ""
-	if isAgent {
-		fmt.Println()
-		walletAddr = w.promptString("  Main wallet address (0x...)", "", true)
-		walletAddress = walletAddr
-	}
-	fmt.Println()
-
-	fmt.Println("  Step 4/7: Signal Server")
-	fmt.Println()
-	fmt.Println("  Connect to signal server for automated trading signals?")
-	fmt.Println("  [1] Yes (recommended)")
-	fmt.Println("  [2] No (standalone mode)")
-	fmt.Println()
-	connectChoice := w.promptChoice("  Choice", 1, 2, 1)
 
 	var relayURL, relayAPIKey, serverPublicKey string
 	var relayClientID int
 
-	if connectChoice == 1 {
-		fmt.Println()
-		serverURL := w.promptString("  Server URL", defaultServerURL, false)
-		fmt.Println()
-		fmt.Println("  Generate a registration token from the dashboard")
-		fmt.Println("  (Wallets page > Add Wallet > Generate)")
-		fmt.Println()
-		var token string
-		for {
-			token = w.promptString("  Registration token (rt_...)", "", true)
-			if strings.HasPrefix(token, "rt_") {
-				break
-			}
-			fmt.Println("  " + color("Token must start with rt_ — copy it from the dashboard.", colorRed))
-			fmt.Println()
+	var token string
+	for {
+		token = w.promptString("  Token (rt_...)", "", true)
+		if strings.HasPrefix(token, "rt_") {
+			break
 		}
-
-		fmt.Printf("\n  Registering with %s... ", serverURL)
-		hostname, _ := os.Hostname()
-		regName := fmt.Sprintf("bot-%s", hostname)
-
-		result, regErr := relay.Register(serverURL, token, regName, walletAddress, network)
-		if regErr != nil {
-			fmt.Println(color("FAILED", colorRed))
-			fmt.Printf("  Error: %v\n", regErr)
-			fmt.Println("  You can configure relay manually in .env later.")
-			fmt.Println()
-		} else {
-			fmt.Println(color("OK", colorGreen))
-			fmt.Printf("  Client ID: %d\n", result.ClientID)
-			fmt.Printf("  Subscribed to %d callers\n", result.Subscriptions)
-
-			relayURL = httpToWS(serverURL)
-			relayAPIKey = result.APIKey
-			relayClientID = result.ClientID
-
-			if result.ServerPublicKey != "" {
-				serverPublicKey = result.ServerPublicKey
-				fmt.Printf("  Server public key: %s...%s\n", serverPublicKey[:8], serverPublicKey[len(serverPublicKey)-8:])
-				fmt.Println("  Ed25519 instruction signing: " + color("enabled", colorGreen))
-			}
-
-			fmt.Println()
-		}
+		fmt.Println("  " + color("Token must start with rt_ — copy it from the dashboard.", colorRed))
+		fmt.Println()
 	}
-	fmt.Println()
 
-	fmt.Println("  Step 5/7: Client Name")
-	fmt.Println()
-	fmt.Println("  Give this instance a name (shown in the CLI banner).")
-	fmt.Println()
 	hostname, _ := os.Hostname()
-	defaultName := fmt.Sprintf("bot-%s", hostname)
-	clientName := w.promptString("  Name", defaultName, false)
-	fmt.Println()
+	clientName := fmt.Sprintf("bot-%s", hostname)
 
-	fmt.Println("  Step 6/7: Risk Limits")
-	fmt.Println()
-	fmt.Println("  Set safety limits to protect your account.")
-	fmt.Println("  The bot will refuse instructions that exceed these limits.")
-	fmt.Println()
-	maxLeverage := w.promptInt("  Max leverage per trade", 0, true)
-	maxOrderSize := w.promptFloat("  Max order size in USD", 0, true)
-	fmt.Println()
-	fmt.Println("  Advanced (press Enter for defaults):")
-	maxPriceDev := w.promptFloat("  Max price deviation from oracle %", 5.0, false)
-	fmt.Println()
-
-	fmt.Println("  Step 7/7: Testing Connection")
-	fmt.Println()
-
-	var clientSigner *hyperliquid.Signer
-	if isAgent {
-		var agentErr error
-		clientSigner, agentErr = hyperliquid.NewAgentSigner(privateKey, walletAddr, net)
-		if agentErr != nil {
-			die("Could not set up agent wallet. Check that your main wallet address is correct: %v", agentErr)
-		}
+	fmt.Printf("\n  Registering... ")
+	result, regErr := relay.Register(defaultServerURL, token, clientName, walletAddress, network)
+	if regErr != nil {
+		fmt.Println(color("FAILED", colorRed))
+		fmt.Printf("  Error: %v\n", regErr)
+		fmt.Println("  You can configure relay manually in .env later.")
+		fmt.Println()
 	} else {
-		clientSigner = signer
+		fmt.Println(color("OK", colorGreen))
+		fmt.Printf("  Client ID: %d\n", result.ClientID)
+
+		relayURL = httpToWS(defaultServerURL)
+		relayAPIKey = result.APIKey
+		relayClientID = result.ClientID
+
+		if result.ServerPublicKey != "" {
+			serverPublicKey = result.ServerPublicKey
+		}
+		fmt.Println()
 	}
+
+	// Step 3: Risk Limits
+	fmt.Println("  Step 3/4: Risk Limits")
+	fmt.Println()
+	fmt.Println("  Safety limits protect your account from rogue signals.")
+	fmt.Println("  Press Enter to accept defaults.")
+	fmt.Println()
+	maxLeverage := w.promptInt("  Max leverage per trade", 20, true)
+	maxOrderSize := w.promptFloat("  Max order size in USD", 500, true)
+	fmt.Println()
+
+	// Step 4: Connection Test
+	fmt.Printf("  Connecting to Hyperliquid %s... ", network)
 
 	client, err := hyperliquid.NewClient(hyperliquid.ClientConfig{
 		Network:     net,
-		MainAddress: clientSigner.SourceAddress(),
-		Signer:      clientSigner,
+		MainAddress: signer.SourceAddress(),
+		Signer:      signer,
 	})
 	if err != nil {
 		die("failed to create client: %v", err)
@@ -353,7 +301,6 @@ func (w *setupWizard) runFresh(configPath string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	fmt.Printf("  Connecting to Hyperliquid %s... ", network)
 	if err := client.RefreshAssets(ctx); err != nil {
 		fmt.Println(color("FAILED", colorRed))
 		die("connection failed: %v", err)
@@ -361,10 +308,9 @@ func (w *setupWizard) runFresh(configPath string) {
 	fmt.Println(color("OK", colorGreen))
 	fmt.Println()
 
+	// Save config
 	cfg := config.DefaultConfig()
 	cfg.Network = network
-	cfg.IsAgentMode = isAgent
-	cfg.WalletAddr = walletAddr
 	cfg.ClientName = clientName
 
 	if relayURL != "" {
@@ -377,7 +323,7 @@ func (w *setupWizard) runFresh(configPath string) {
 	cfg.RiskLimits = config.RiskLimits{
 		MaxLeverage:     maxLeverage,
 		MaxOrderSizeUSD: maxOrderSize,
-		MaxPriceDevPct:  maxPriceDev,
+		MaxPriceDevPct:  5.0,
 	}
 	cfg.RiskLimits.ApplyDefaults()
 
@@ -403,8 +349,8 @@ func (w *setupWizard) runFresh(configPath string) {
 
 	fmt.Println(color("  Setup complete!", colorGreen))
 	fmt.Println()
-	fmt.Printf("  Config saved to:    %s\n", configPath)
-	fmt.Printf("  Private key in:     .env\n")
+	fmt.Printf("  Config saved to:  %s\n", configPath)
+	fmt.Printf("  Private key in:   .env\n")
 	fmt.Println()
 	fmt.Println("  To encrypt your private key:")
 	fmt.Printf("    ./bot encrypt-key\n")

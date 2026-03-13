@@ -33,6 +33,7 @@ type authMsg struct {
 	Role     string `json:"role"`
 	APIKey   string `json:"api_key"`
 	ClientID int    `json:"client_id,omitempty"`
+	Version  string `json:"version,omitempty"`
 }
 
 type authResultMsg struct {
@@ -90,6 +91,11 @@ type clientLogMsg struct {
 
 type ConfigUpdateMsg struct {
 	Name string `json:"name,omitempty"`
+}
+
+type VersionInfoMsg struct {
+	LatestVersion   string `json:"latest_version"`
+	UpdateAvailable bool   `json:"update_available"`
 }
 
 func parseType(data []byte) string {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -75,9 +76,40 @@ func cmdRun(args []string) {
 	}
 
 	if err := cfg.Validate(); err != nil {
-		slog.Error("invalid configuration", "error", err)
-		fmt.Fprintf(os.Stderr, "\nRun './bot setup' to configure your bot.\n")
-		os.Exit(1)
+		if cfg.PrivateKey == "" || cfg.RiskLimits.MaxLeverage <= 0 {
+			fmt.Println()
+			fmt.Println("  No configuration found. Starting setup...")
+			fmt.Println()
+			w := &setupWizard{
+				reader:  bufio.NewReader(os.Stdin),
+				testnet: *testnet,
+			}
+			w.runFresh("config.json")
+
+			cfg, _ = config.LoadFromFile("config.json")
+			if cfg == nil {
+				cfg = config.DefaultConfig()
+			}
+			loadDotEnv()
+			config.LoadFromEnv(cfg)
+			if cfg.PrivateKey == "" {
+				cfg.PrivateKey = loadPrivateKeyFromKeystore()
+			}
+			if cfg.PrivateKey == "" {
+				cfg.PrivateKey = privateKeyFromEnv()
+			}
+			if *testnet {
+				cfg.Network = "testnet"
+			}
+			if err := cfg.Validate(); err != nil {
+				slog.Error("configuration still invalid after setup", "error", err)
+				os.Exit(1)
+			}
+		} else {
+			slog.Error("invalid configuration", "error", err)
+			fmt.Fprintf(os.Stderr, "\nRun './bot setup' to configure your bot.\n")
+			os.Exit(1)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -148,6 +180,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 		APIKey:          cfg.Relay.APIKey,
 		ClientID:        cfg.Relay.ClientID,
 		ServerPublicKey: cfg.Relay.ServerPublicKey,
+		Version:         version,
 	}, client, validator, tradeStore)
 	if err != nil {
 		return fmt.Errorf("relay setup failed: %w", err)
@@ -163,6 +196,22 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 		return runPlain(ctx, cancel, client, relayClient, state)
 	}
 
+	settings := &SettingsSnapshot{
+		Network:        cfg.Network,
+		WalletAddr:     signer.SourceAddress(),
+		IsAgentMode:    cfg.IsAgentMode,
+		ClientName:     instanceName,
+		RelayURL:       cfg.Relay.ServerURL,
+		ClientID:       cfg.Relay.ClientID,
+		LogLevel:       cfg.LogLevel,
+		MaxLeverage:    cfg.RiskLimits.MaxLeverage,
+		MaxOrderUSD:    cfg.RiskLimits.MaxOrderSizeUSD,
+		MaxPriceDevPct: cfg.RiskLimits.MaxPriceDevPct,
+		MaxPerMinute:   cfg.RiskLimits.MaxPerMinute,
+		SigningEnabled: cfg.Relay.ServerPublicKey != "",
+		Version:        version,
+	}
+
 	m := newTUIModel(
 		instanceName,
 		signer.SourceAddress(),
@@ -170,6 +219,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 		state,
 		relayClient.Connected(),
 		tradeStore,
+		settings,
 		tuiHandler,
 		cancel,
 	)
@@ -180,6 +230,13 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 	relayClient.OnConfigUpdate(func(msg relay.ConfigUpdateMsg) {
 		if msg.Name != "" {
 			p.Send(nameUpdateMsg(msg.Name))
+			settings.ClientName = msg.Name
+		}
+	})
+
+	relayClient.OnVersionInfo(func(msg relay.VersionInfoMsg) {
+		if msg.UpdateAvailable {
+			p.Send(versionInfoMsg(msg))
 		}
 	})
 

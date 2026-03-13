@@ -21,6 +21,7 @@ type Config struct {
 	APIKey          string
 	ClientID        int
 	ServerPublicKey string
+	Version         string
 }
 
 type Client struct {
@@ -43,6 +44,7 @@ type Client struct {
 	serverPubKey   ed25519.PublicKey
 	recorder       TradeRecorder
 	onConfigUpdate func(ConfigUpdateMsg)
+	onVersionInfo  func(VersionInfoMsg)
 }
 
 func NewClient(cfg Config, hlClient *hyperliquid.Client, validator *RiskValidator, recorder TradeRecorder) (*Client, error) {
@@ -87,6 +89,10 @@ func (c *Client) Connected() bool {
 
 func (c *Client) OnConfigUpdate(fn func(ConfigUpdateMsg)) {
 	c.onConfigUpdate = fn
+}
+
+func (c *Client) OnVersionInfo(fn func(VersionInfoMsg)) {
+	c.onVersionInfo = fn
 }
 
 func (c *Client) Stop() {
@@ -176,6 +182,7 @@ func (c *Client) connect() error {
 		Role:     "client",
 		APIKey:   c.cfg.APIKey,
 		ClientID: c.cfg.ClientID,
+		Version:  c.cfg.Version,
 	}
 
 	if err := c.sendJSON(auth); err != nil {
@@ -248,6 +255,14 @@ func (c *Client) readLoop() {
 			}
 			if err := json.Unmarshal(data, &msg); err == nil && c.onConfigUpdate != nil {
 				c.onConfigUpdate(msg.ConfigUpdateMsg)
+			}
+
+		case "version_info":
+			var msg struct {
+				VersionInfoMsg
+			}
+			if err := json.Unmarshal(data, &msg); err == nil && c.onVersionInfo != nil {
+				c.onVersionInfo(msg.VersionInfoMsg)
 			}
 
 		case "client_status", "auth_result":

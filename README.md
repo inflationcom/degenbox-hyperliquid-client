@@ -1,9 +1,26 @@
-# DegenBox
+<p align="center">
+  <img src="assets/logo.png" width="120" alt="DegenBox" />
+</p>
 
-[![Go 1.24+](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev/dl/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<h1 align="center">DegenBox</h1>
 
-A lightweight trading executor for [Hyperliquid](https://hyperliquid.xyz). Connects to a signal relay server over WebSocket, validates incoming instructions against configurable risk limits, and executes trades on your behalf.
+<p align="center">
+  <strong>Self-custodial trading executor for Hyperliquid</strong>
+</p>
+
+<p align="center">
+  <a href="https://go.dev/dl/"><img src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white" alt="Go 1.24+" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  <a href="https://github.com/inflationcom/degenbox-hyperliquid-client/releases/latest"><img src="https://img.shields.io/github/v/release/inflationcom/degenbox-hyperliquid-client?label=release&color=5CDB95" alt="Latest Release" /></a>
+</p>
+
+<p align="center">
+  <img src="assets/screenshot.png" width="700" alt="DegenBox TUI" />
+</p>
+
+---
+
+Connects to a signal relay server over WebSocket, validates incoming instructions against configurable risk limits, and executes trades on [Hyperliquid](https://hyperliquid.xyz) on your behalf.
 
 Your private key **never leaves your machine**. The server sends signed instructions — this client verifies and executes them locally.
 
@@ -13,7 +30,7 @@ Your private key **never leaves your machine**. The server sends signed instruct
 - **Risk validation** — Configurable limits on leverage, order size, price deviation, and rate limiting
 - **Encrypted keystore** — AES-256-GCM + Argon2id encryption for private key storage
 - **Agent wallet support** — Operate with delegated wallet permissions
-- **Terminal UI** — Live account state, positions, trade history, and log viewer
+- **Terminal UI** — Live account state, positions, trade history, settings, and log viewer
 
 ## Prerequisites
 
@@ -21,17 +38,31 @@ Your private key **never leaves your machine**. The server sends signed instruct
 - A [Hyperliquid](https://app.hyperliquid.xyz) account with funds
 - A registration token (`rt_`) from the [dashboard](https://scheme24.com)
 
-## Quick Start
+## Install
+
+### Download (recommended)
+
+Grab the latest binary for your platform from [GitHub Releases](https://github.com/inflationcom/degenbox-hyperliquid-client/releases/latest).
+
+```bash
+# Linux (x86_64)
+curl -L -o bot https://github.com/inflationcom/degenbox-hyperliquid-client/releases/latest/download/bot-linux-amd64
+chmod +x bot
+./bot
+```
+
+### Build from source
+
+Requires [Go 1.24+](https://go.dev/dl/).
 
 ```bash
 git clone https://github.com/inflationcom/degenbox-hyperliquid-client.git
 cd degenbox-hyperliquid-client
 make build
-./bin/bot setup
 ./bin/bot
 ```
 
-The interactive setup wizard walks you through network selection, private key input, relay server registration, and risk limit configuration.
+The bot walks you through setup on first run — just paste your private key and registration token. Use `--testnet` for testnet.
 
 For a full step-by-step guide (including VPS setup, key encryption, and tmux), see the [Setup Guide](https://scheme24.com/docs).
 
@@ -41,11 +72,14 @@ For a full step-by-step guide (including VPS setup, key encryption, and tmux), s
 bot <command> [options]
 
 Commands:
-  setup         Set up your bot (interactive)
-  run           Connect to relay server and execute trades
+  run           Connect to relay and start trading (runs setup if needed)
+  setup         Run the setup wizard manually
   config        View current configuration
   encrypt-key   Encrypt your private key with a passphrase
   version       Show version info
+
+Flags:
+  --testnet     Use testnet instead of mainnet
 ```
 
 ## Configuration

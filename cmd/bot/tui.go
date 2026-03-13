@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/inflationcom/degenbox-hyperliquid-client/internal/hyperliquid"
+	"github.com/inflationcom/degenbox-hyperliquid-client/internal/relay"
 )
 
 type viewMode int
@@ -17,6 +18,7 @@ const (
 	viewLogs viewMode = iota
 	viewTrades
 	viewPositions
+	viewSettings
 )
 
 const maxLogLines = 1000
@@ -27,6 +29,8 @@ type accountUpdateMsg struct {
 }
 
 type nameUpdateMsg string
+
+type versionInfoMsg relay.VersionInfoMsg
 
 type clockTickMsg time.Time
 
@@ -46,8 +50,13 @@ type tuiModel struct {
 	tradeStore *TradeStore
 	clock      time.Time
 
+	settings *SettingsSnapshot
+
 	// Log handler (for flushing buffered pre-TUI logs)
 	logHandler *TUILogHandler
+
+	updateAvailable bool
+	latestVersion   string
 
 	quitting bool
 	quitFunc func()
@@ -58,6 +67,7 @@ func newTUIModel(
 	state *hyperliquid.ClearinghouseState,
 	connected bool,
 	tradeStore *TradeStore,
+	settings *SettingsSnapshot,
 	logHandler *TUILogHandler,
 	quitFunc func(),
 ) tuiModel {
@@ -72,6 +82,7 @@ func newTUIModel(
 		connected:    connected,
 		logView:      vp,
 		tradeStore:   tradeStore,
+		settings:     settings,
 		logHandler:   logHandler,
 		clock:        time.Now(),
 		quitFunc:     quitFunc,
@@ -107,6 +118,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeView = viewTrades
 		case "p":
 			m.activeView = viewPositions
+		case "s":
+			m.activeView = viewSettings
 		case "esc", "enter":
 			m.activeView = viewLogs
 		}
@@ -140,6 +153,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case nameUpdateMsg:
 		m.instanceName = string(msg)
+
+	case versionInfoMsg:
+		m.updateAvailable = msg.UpdateAvailable
+		m.latestVersion = msg.LatestVersion
 
 	case clockTickMsg:
 		m.clock = time.Time(msg)
@@ -179,6 +196,10 @@ func (m tuiModel) View() string {
 		title := styleViewTitle.Render("  Positions")
 		body := m.renderPositionsView()
 		content = title + "\n" + body
+	case viewSettings:
+		title := styleViewTitle.Render("  Settings")
+		body := renderSettings(m.settings, m.connected)
+		content = title + "\n" + body
 	default:
 		content = m.logView.View()
 	}
@@ -206,6 +227,13 @@ func (m tuiModel) renderHeader() string {
 	sb.WriteString("  ")
 	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render(m.instanceName))
 	sb.WriteString("\n")
+
+	if m.updateAvailable && m.latestVersion != "" {
+		sb.WriteString("  ")
+		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFCC00")).Render(
+			fmt.Sprintf("Update available: %s  (current: %s)", m.latestVersion, version)))
+		sb.WriteString("\n")
+	}
 
 	sep := styleSeparator.Render("  " + strings.Repeat("─", max(0, min(m.width-4, 44))))
 	sb.WriteString(sep)
@@ -268,6 +296,7 @@ func (m tuiModel) renderFooter() string {
 
 	hints := " " + styleKeybindKey.Render("[t]") + styleKeybindHint.Render("rades  ") +
 		styleKeybindKey.Render("[p]") + styleKeybindHint.Render("ositions  ") +
+		styleKeybindKey.Render("[s]") + styleKeybindHint.Render("ettings  ") +
 		styleKeybindKey.Render("[q]") + styleKeybindHint.Render("uit")
 
 	return sep + "\n" + status + "\n" + hints
@@ -282,6 +311,9 @@ func (m tuiModel) renderPositionsView() string {
 
 func (m tuiModel) headerLines() int {
 	lines := 8 // logo (6: leading newline + 5 art) + blank + name
+	if m.updateAvailable {
+		lines += 1
+	}
 	lines += 2 // separator + wallet/network
 	if m.accountState != nil {
 		lines += 2 // equity/margin + free/positions
