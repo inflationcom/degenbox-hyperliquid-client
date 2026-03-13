@@ -1,0 +1,15 @@
+.git
+.gitignore
+.dockerignore
+bin/
+.env
+.env.*
+.keystore.json
+config.json
+*.log
+*.md
+LICENSE
+test/
+coverage.out
+coverage.html
+.DS_Store
