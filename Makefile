@@ -25,8 +25,8 @@ help:
 
 build:
 	@mkdir -p bin
-	go build $(LDFLAGS) -o bin/bot ./cmd/bot
-	go build $(LDFLAGS) -o bin/healthcheck ./cmd/healthcheck
+	CGO_ENABLED=0 go build $(LDFLAGS) -o bin/bot ./cmd/bot
+	CGO_ENABLED=0 go build $(LDFLAGS) -o bin/healthcheck ./cmd/healthcheck
 
 build-all:
 	@mkdir -p dist
