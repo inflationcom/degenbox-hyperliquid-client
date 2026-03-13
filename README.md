@@ -1,6 +1,6 @@
 <h1>
   <img src="assets/logo.png" width="36" alt="" />&nbsp;
-  DegenBox
+  DegenBox Perpetuals
 </h1>
 
 **Self-custodial trading executor for [Hyperliquid](https://hyperliquid.xyz)**
