@@ -34,6 +34,7 @@ type Client struct {
 	wg       sync.WaitGroup
 
 	connected          atomic.Bool
+	paused             atomic.Bool
 	reconnectDelay     time.Duration
 	maxReconnect       time.Duration
 	consecutiveFailures int
@@ -106,6 +107,10 @@ func (c *Client) execWorker() {
 
 func (c *Client) Connected() bool {
 	return c.connected.Load()
+}
+
+func (c *Client) IsPaused() bool {
+	return c.paused.Load()
 }
 
 func (c *Client) OnConfigUpdate(fn func(ConfigUpdateMsg)) {
@@ -290,8 +295,18 @@ func (c *Client) readLoop() {
 			var msg struct {
 				ConfigUpdateMsg
 			}
-			if err := json.Unmarshal(data, &msg); err == nil && c.onConfigUpdate != nil {
-				c.onConfigUpdate(msg.ConfigUpdateMsg)
+			if err := json.Unmarshal(data, &msg); err == nil {
+				if msg.Paused != nil {
+					c.paused.Store(*msg.Paused)
+					if *msg.Paused {
+						slog.Info("client paused by server")
+					} else {
+						slog.Info("client resumed by server")
+					}
+				}
+				if c.onConfigUpdate != nil {
+					c.onConfigUpdate(msg.ConfigUpdateMsg)
+				}
 			}
 
 		case "version_info":
@@ -328,6 +343,14 @@ func (c *Client) handleInstruction(data []byte) {
 
 	if !c.dedup.Check(instr.InstructionID) {
 		slog.Warn("duplicate instruction rejected", "id", instr.InstructionID)
+		return
+	}
+
+	if c.paused.Load() {
+		slog.Warn("instruction dropped: client is paused",
+			"id", instr.InstructionID,
+			"market", instr.Market,
+		)
 		return
 	}
 
@@ -455,7 +478,7 @@ func (c *Client) sendJSON(v any) error {
 }
 
 func (c *Client) SendLog(msg clientLogMsg) {
-	if !c.connected.Load() {
+	if !c.connected.Load() || c.paused.Load() {
 		return
 	}
 	_ = c.sendJSON(msg)

@@ -19,14 +19,18 @@ type RegistrationResult struct {
 	Message         string `json:"message"`
 }
 
-func Register(serverBaseURL, token, name, walletAddr, network string) (*RegistrationResult, error) {
+func Register(serverBaseURL, token, name, walletAddr, mainWalletAddr, network string) (*RegistrationResult, error) {
 	baseURL := strings.TrimRight(serverBaseURL, "/")
 
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"name":           name,
 		"wallet_address": walletAddr,
 		"network":        network,
-	})
+	}
+	if mainWalletAddr != "" {
+		payload["main_wallet_address"] = mainWalletAddr
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}

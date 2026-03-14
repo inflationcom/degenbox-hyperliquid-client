@@ -114,16 +114,32 @@ func (w *setupWizard) updateRelay(configPath string, cfg *config.Config) {
 		fmt.Println()
 	}
 
-	walletAddr := cfg.WalletAddr
-	if walletAddr == "" {
-		walletAddr = w.promptString("  Wallet address (0x...)", "", true)
+	// Derive the key address for registration (unique per API wallet)
+	var keyAddr string
+	if cfg.PrivateKey != "" {
+		net := hyperliquid.Mainnet
+		if cfg.Network == "testnet" {
+			net = hyperliquid.Testnet
+		}
+		if s, err := hyperliquid.NewSigner(cfg.PrivateKey, net); err == nil {
+			keyAddr = s.Address()
+		}
+	}
+	if keyAddr == "" {
+		keyAddr = w.promptString("  Wallet address (0x...)", "", true)
+	}
+
+	// main_wallet_address is only needed for agent mode
+	mainWalletAddr := ""
+	if cfg.IsAgentMode && cfg.WalletAddr != "" {
+		mainWalletAddr = cfg.WalletAddr
 	}
 
 	fmt.Printf("\n  Registering with %s... ", serverURL)
 	hostname, _ := os.Hostname()
 	regName := fmt.Sprintf("bot-%s", hostname)
 
-	result, regErr := relay.Register(serverURL, token, regName, walletAddr, cfg.Network)
+	result, regErr := relay.Register(serverURL, token, regName, keyAddr, mainWalletAddr, cfg.Network)
 	if regErr != nil {
 		fmt.Println(color("FAILED", colorRed))
 		fmt.Printf("  Error: %v\n\n", regErr)
@@ -298,7 +314,7 @@ func (w *setupWizard) runFresh(configPath string) {
 	clientName := fmt.Sprintf("bot-%s", hostname)
 
 	fmt.Printf("\n  Registering... ")
-	result, regErr := relay.Register(defaultServerURL, token, clientName, walletAddress, network)
+	result, regErr := relay.Register(defaultServerURL, token, clientName, keyAddress, mainWalletAddr, network)
 	if regErr != nil {
 		fmt.Println(color("FAILED", colorRed))
 		fmt.Printf("  Error: %v\n", regErr)
