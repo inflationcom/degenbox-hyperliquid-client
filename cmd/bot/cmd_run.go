@@ -114,7 +114,7 @@ func cmdRun(args []string) {
 			}
 		} else {
 			slog.Error("invalid configuration", "error", err)
-			fmt.Fprintf(os.Stderr, "\nRun './bot setup' to configure your bot.\n")
+			fmt.Fprintf(os.Stderr, "\nRun '%s setup' to configure your bot.\n", botCmd())
 			os.Exit(1)
 		}
 	}
@@ -147,7 +147,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 		signer, err = hyperliquid.NewSigner(cfg.PrivateKey, cfg.GetNetwork())
 	}
 	if err != nil {
-		return fmt.Errorf("invalid private key — check your .env file or run './bot setup': %w", err)
+		return fmt.Errorf("invalid private key — check your .env file or run '%s setup': %w", botCmd(), err)
 	}
 	cfg.PrivateKey = ""
 	os.Unsetenv("HL_PRIVATE_KEY")
@@ -174,7 +174,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 	}
 
 	if cfg.Relay.ServerURL == "" {
-		return fmt.Errorf("relay server URL not configured — run './bot setup' first")
+		return fmt.Errorf("relay server URL not configured — run '%s setup' first", botCmd())
 	}
 
 	cfg.RiskLimits.ApplyDefaults()

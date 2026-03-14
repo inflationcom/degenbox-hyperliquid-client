@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/inflationcom/degenbox-hyperliquid-client/internal/hyperliquid"
 )
 
 // Keep in sync with cmd/healthcheck/main.go.
-const defaultHeartbeatPath = "/tmp/degenbox-heartbeat.json"
+var defaultHeartbeatPath = filepath.Join(os.TempDir(), "degenbox-heartbeat.json")
 
 type heartbeat struct {
 	Timestamp time.Time `json:"timestamp"`

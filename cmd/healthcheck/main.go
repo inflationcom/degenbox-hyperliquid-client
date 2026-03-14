@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
 
 // Keep in sync with cmd/bot/heartbeat.go.
-const defaultPath = "/tmp/degenbox-heartbeat.json"
+var defaultPath = filepath.Join(os.TempDir(), "degenbox-heartbeat.json")
 const maxAge = 90 * time.Second
 
 func main() {

@@ -142,10 +142,10 @@ func (c *Config) Validate() error {
 
 func (r *RiskLimits) Validate() error {
 	if r.MaxLeverage <= 0 {
-		return fmt.Errorf("risk_limits.max_leverage must be set (run './bot setup')")
+		return fmt.Errorf("risk_limits.max_leverage must be set (run 'bot setup')")
 	}
 	if r.MaxOrderSizeUSD <= 0 {
-		return fmt.Errorf("risk_limits.max_order_size_usd must be set (run './bot setup')")
+		return fmt.Errorf("risk_limits.max_order_size_usd must be set (run 'bot setup')")
 	}
 	return nil
 }

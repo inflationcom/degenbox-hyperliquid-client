@@ -408,10 +408,10 @@ func (w *setupWizard) runFresh(configPath string) {
 	fmt.Printf("  Private key in:   .env\n")
 	fmt.Println()
 	fmt.Println("  To encrypt your private key:")
-	fmt.Printf("    ./bot encrypt-key\n")
+	fmt.Printf("    %s encrypt-key\n", botCmd())
 	fmt.Println()
 	fmt.Println("  To start the bot:")
-	fmt.Printf("    ./bot\n")
+	fmt.Printf("    %s run\n", botCmd())
 	fmt.Println()
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -55,10 +56,12 @@ func loadDotEnv() {
 	}
 	defer f.Close()
 
-	if info, err := f.Stat(); err == nil {
-		if info.Mode().Perm()&0077 != 0 {
-			slog.Warn(".env has loose permissions, should be 0600",
-				"current", fmt.Sprintf("%04o", info.Mode().Perm()))
+	if runtime.GOOS != "windows" {
+		if info, err := f.Stat(); err == nil {
+			if info.Mode().Perm()&0077 != 0 {
+				slog.Warn(".env has loose permissions, should be 0600",
+					"current", fmt.Sprintf("%04o", info.Mode().Perm()))
+			}
 		}
 	}
 
@@ -100,4 +103,11 @@ const (
 
 func color(s, code string) string {
 	return code + s + colorReset
+}
+
+func botCmd() string {
+	if runtime.GOOS == "windows" {
+		return ".\\bot.exe"
+	}
+	return "./bot"
 }

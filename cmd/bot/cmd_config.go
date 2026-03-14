@@ -16,7 +16,7 @@ func cmdConfig(args []string) {
 
 	cfg, err := config.LoadFromFile(*configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "No config found. Run './bot setup' first.\n")
+		fmt.Fprintf(os.Stderr, "No config found. Run '%s setup' first.\n", botCmd())
 		os.Exit(1)
 	}
 
@@ -68,6 +68,6 @@ func printConfig(cfg *config.Config) {
 	fmt.Printf("  Level            %s\n", cfg.LogLevel)
 	fmt.Printf("  Format           %s\n", cfg.LogFormat)
 	fmt.Println()
-	fmt.Println("  To change settings, edit config.json or re-run './bot setup'.")
+	fmt.Printf("  To change settings, edit config.json or re-run '%s setup'.\n", botCmd())
 	fmt.Println()
 }
