@@ -92,7 +92,8 @@ type clientLogMsg struct {
 }
 
 type ConfigUpdateMsg struct {
-	Name string `json:"name,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Paused *bool  `json:"paused,omitempty"`
 }
 
 type VersionInfoMsg struct {
@@ -103,6 +104,12 @@ type VersionInfoMsg struct {
 type AuthInfoMsg struct {
 	Callers         []string `json:"callers"`
 	CopytradeTarget string   `json:"copytrade_target"`
+}
+
+type AssignmentUpdateMsg struct {
+	SourceType      *string `json:"source_type"`
+	CallerName      *string `json:"caller_name"`
+	CopytradeTarget *string `json:"copytrade_target"`
 }
 
 func parseType(data []byte) string {

@@ -31,10 +31,13 @@ type accountUpdateMsg struct {
 }
 
 type nameUpdateMsg string
+type pauseUpdateMsg bool
 
 type versionInfoMsg relay.VersionInfoMsg
 
 type authInfoMsg relay.AuthInfoMsg
+
+type assignmentUpdateMsg relay.AssignmentUpdateMsg
 
 type clockTickMsg time.Time
 
@@ -49,6 +52,7 @@ type tuiModel struct {
 	network      string
 	callerName   string
 	targetWallet string
+	paused       bool
 
 	accountState *hyperliquid.ClearinghouseState
 	connected    bool
@@ -203,11 +207,26 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case nameUpdateMsg:
 		m.instanceName = string(msg)
 
+	case pauseUpdateMsg:
+		m.paused = bool(msg)
+
 	case authInfoMsg:
 		if len(msg.Callers) > 0 {
 			m.callerName = msg.Callers[0]
 		}
 		m.targetWallet = msg.CopytradeTarget
+
+	case assignmentUpdateMsg:
+		if msg.CallerName != nil {
+			m.callerName = *msg.CallerName
+		} else {
+			m.callerName = ""
+		}
+		if msg.CopytradeTarget != nil {
+			m.targetWallet = *msg.CopytradeTarget
+		} else {
+			m.targetWallet = ""
+		}
 
 	case versionInfoMsg:
 		m.updateAvailable = msg.UpdateAvailable
@@ -301,6 +320,10 @@ func (m tuiModel) renderHeader() string {
 	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render(m.instanceName))
 	sb.WriteString("  ")
 	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Render(version))
+	if m.paused {
+		sb.WriteString("  ")
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF6666")).Render("PAUSED"))
+	}
 	sb.WriteString("\n")
 
 	if m.updateAvailable && m.latestVersion != "" {

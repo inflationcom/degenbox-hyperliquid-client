@@ -43,9 +43,10 @@ type Client struct {
 	rateLimit      *rateLimiter
 	serverPubKey   ed25519.PublicKey
 	recorder       TradeRecorder
-	onConfigUpdate func(ConfigUpdateMsg)
-	onVersionInfo  func(VersionInfoMsg)
-	onAuthInfo     func(AuthInfoMsg)
+	onConfigUpdate     func(ConfigUpdateMsg)
+	onVersionInfo      func(VersionInfoMsg)
+	onAuthInfo         func(AuthInfoMsg)
+	onAssignmentUpdate func(AssignmentUpdateMsg)
 	execQueue      chan *ExecutionInstruction
 }
 
@@ -117,6 +118,10 @@ func (c *Client) OnVersionInfo(fn func(VersionInfoMsg)) {
 
 func (c *Client) OnAuthInfo(fn func(AuthInfoMsg)) {
 	c.onAuthInfo = fn
+}
+
+func (c *Client) OnAssignmentUpdate(fn func(AssignmentUpdateMsg)) {
+	c.onAssignmentUpdate = fn
 }
 
 func (c *Client) Stop() {
@@ -295,6 +300,14 @@ func (c *Client) readLoop() {
 			}
 			if err := json.Unmarshal(data, &msg); err == nil && c.onVersionInfo != nil {
 				c.onVersionInfo(msg.VersionInfoMsg)
+			}
+
+		case "assignment_update":
+			var msg struct {
+				AssignmentUpdateMsg
+			}
+			if err := json.Unmarshal(data, &msg); err == nil && c.onAssignmentUpdate != nil {
+				c.onAssignmentUpdate(msg.AssignmentUpdateMsg)
 			}
 
 		case "client_status", "auth_result":

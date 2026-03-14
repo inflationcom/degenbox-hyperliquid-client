@@ -239,6 +239,9 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 			p.Send(nameUpdateMsg(msg.Name))
 			settings.ClientName = msg.Name
 		}
+		if msg.Paused != nil {
+			p.Send(pauseUpdateMsg(*msg.Paused))
+		}
 	})
 
 	relayClient.OnVersionInfo(func(msg relay.VersionInfoMsg) {
@@ -249,6 +252,10 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 
 	relayClient.OnAuthInfo(func(msg relay.AuthInfoMsg) {
 		p.Send(authInfoMsg(msg))
+	})
+
+	relayClient.OnAssignmentUpdate(func(msg relay.AssignmentUpdateMsg) {
+		p.Send(assignmentUpdateMsg(msg))
 	})
 
 	go func() {
