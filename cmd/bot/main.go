@@ -3,10 +3,13 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
+	"golang.org/x/term"
 	_ "golang.org/x/crypto/x509roots/fallback"
 )
 
@@ -16,6 +19,14 @@ var (
 )
 
 func main() {
+	// On Windows, if double-clicked (no terminal), pause before exit so the user can read output
+	if runtime.GOOS == "windows" && !term.IsTerminal(int(os.Stdout.Fd())) {
+		defer func() {
+			fmt.Println("\nPress Enter to exit...")
+			bufio.NewReader(os.Stdin).ReadBytes('\n')
+		}()
+	}
+
 	if len(os.Args) < 2 {
 		cmdRun([]string{})
 		return
