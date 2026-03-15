@@ -115,13 +115,26 @@ func (w *setupWizard) updateRelay(configPath string, cfg *config.Config) {
 	}
 
 	// Derive the key address for registration (unique per API wallet)
+	// Try: config → .env → keystore → prompt
+	pk := cfg.PrivateKey
+	if pk == "" {
+		loadDotEnv()
+		config.LoadFromEnv(cfg)
+		pk = cfg.PrivateKey
+	}
+	if pk == "" {
+		pk = loadPrivateKeyFromKeystore()
+	}
+	if pk == "" {
+		pk = privateKeyFromEnv()
+	}
 	var keyAddr string
-	if cfg.PrivateKey != "" {
+	if pk != "" {
 		net := hyperliquid.Mainnet
 		if cfg.Network == "testnet" {
 			net = hyperliquid.Testnet
 		}
-		if s, err := hyperliquid.NewSigner(cfg.PrivateKey, net); err == nil {
+		if s, err := hyperliquid.NewSigner(pk, net); err == nil {
 			keyAddr = s.Address()
 		}
 	}
