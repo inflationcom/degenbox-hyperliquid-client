@@ -1,0 +1,22 @@
+{
+  "network": "testnet",
+  "is_agent_mode": false,
+  "wallet_addr": "",
+  "client_name": "",
+  "log_level": "info",
+  "log_format": "pretty",
+  "relay": {
+    "relay_url": "wss://your-server.com/ws",
+    "relay_api_key": "",
+    "relay_client_id": 0,
+    "server_public_key": ""
+  },
+  "risk_limits": {
+    "max_leverage": 10,
+    "max_order_size_usd": 1000,
+    "max_price_dev_pct": 5,
+    "max_orders_per_step": 10,
+    "max_steps_per_instr": 8,
+    "max_per_minute": 30
+  }
+}

@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Build all platforms
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: make build-all VERSION="$VERSION"
+
+      - name: Generate checksums
+        run: cd dist && sha256sum bot-* > sha256sums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/bot-*
+            dist/sha256sums.txt
