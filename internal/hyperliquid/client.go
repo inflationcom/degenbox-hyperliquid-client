@@ -230,7 +230,51 @@ func (c *Client) RefreshAssets(ctx context.Context) error {
 		}
 	}
 
+	// Load builder dex assets (xyz, etc.) with correct ID offset
+	c.refreshBuilderDexAssets(ctx)
+
 	return nil
+}
+
+func (c *Client) refreshBuilderDexAssets(ctx context.Context) {
+	var dexes []json.RawMessage
+	if err := c.postInfo(ctx, map[string]string{"type": "perpDexs"}, &dexes); err != nil {
+		return // perpDexs not available (e.g. testnet)
+	}
+
+	for dexIndex := 1; dexIndex < len(dexes); dexIndex++ {
+		if string(dexes[dexIndex]) == "null" {
+			continue
+		}
+		var dex PerpDex
+		if err := json.Unmarshal(dexes[dexIndex], &dex); err != nil || dex.Name == "" {
+			continue
+		}
+
+		req := MetaAndAssetCtxsRequest{Type: "metaAndAssetCtxs", Dex: dex.Name}
+		var dexResp []json.RawMessage
+		if err := c.postInfo(ctx, req, &dexResp); err != nil || len(dexResp) < 2 {
+			continue
+		}
+
+		var dexMeta Meta
+		if err := json.Unmarshal(dexResp[0], &dexMeta); err != nil {
+			continue
+		}
+		var dexCtxs []AssetCtx
+		json.Unmarshal(dexResp[1], &dexCtxs) // best effort
+
+		offset := 100000 + dexIndex*10000
+		for i, asset := range dexMeta.Universe {
+			assetID := offset + i
+			c.assets[asset.Name] = assetID
+			c.assetNames[assetID] = asset.Name
+			c.assetsInfo[asset.Name] = &dexMeta.Universe[i]
+			if i < len(dexCtxs) {
+				c.assetsCtx[asset.Name] = &dexCtxs[i]
+			}
+		}
+	}
 }
 
 func (c *Client) GetAssetID(market string) (int, error) {

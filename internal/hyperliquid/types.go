@@ -18,6 +18,11 @@ const (
 
 type MetaAndAssetCtxsRequest struct {
 	Type string `json:"type"`
+	Dex  string `json:"dex,omitempty"`
+}
+
+type PerpDex struct {
+	Name string `json:"name"`
 }
 
 type Meta struct {
