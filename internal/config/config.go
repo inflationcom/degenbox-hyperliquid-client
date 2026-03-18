@@ -22,7 +22,8 @@ type Config struct {
 	LogLevel   string      `json:"log_level"`
 	LogFormat  string      `json:"log_format"`
 	ClientName string      `json:"client_name"`
-	RiskLimits RiskLimits  `json:"risk_limits"`
+	RiskLimits   RiskLimits `json:"risk_limits"`
+	TickerAssets []string   `json:"ticker_assets,omitempty"`
 }
 
 type RiskLimits struct {

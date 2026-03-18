@@ -276,6 +276,15 @@ func (c *Client) GetOraclePrice(market string) (string, error) {
 	return ctx.OraclePx, nil
 }
 
+func (c *Client) GetAllMids(ctx context.Context) (map[string]string, error) {
+	req := map[string]string{"type": "allMids"}
+	var resp map[string]string
+	if err := c.postInfo(ctx, req, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 func (c *Client) GetMaxLeverage(market string) (int, error) {
 	c.assetsMu.RLock()
 	defer c.assetsMu.RUnlock()

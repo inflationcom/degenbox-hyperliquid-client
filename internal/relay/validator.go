@@ -19,6 +19,11 @@ func NewRiskValidator(limits config.RiskLimits, hlClient *hyperliquid.Client) *R
 	return &RiskValidator{limits: limits, hlClient: hlClient}
 }
 
+// UpdateLimits hot-swaps the risk limits at runtime.
+func (v *RiskValidator) UpdateLimits(limits config.RiskLimits) {
+	v.limits = limits
+}
+
 func (v *RiskValidator) Validate(instr *ExecutionInstruction) error {
 	if len(instr.Steps) == 0 {
 		return fmt.Errorf("empty instruction (no steps)")

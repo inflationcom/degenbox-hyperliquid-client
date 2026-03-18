@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -486,6 +488,66 @@ func (c *Client) SendLog(msg clientLogMsg) {
 
 func (c *Client) NewLogHandler(level slog.Leveler) *WSLogHandler {
 	return NewWSLogHandler(level, c)
+}
+
+// UpdateAPIKey sets a new API key, picked up on next reconnect attempt.
+func (c *Client) UpdateAPIKey(key string) {
+	c.connMu.Lock()
+	c.cfg.APIKey = key
+	c.connMu.Unlock()
+	// Reset reconnect delay so it retries quickly
+	c.reconnectDelay = time.Second
+}
+
+// SendPause sends a pause/resume request to the server via WebSocket.
+func (c *Client) SendPause(paused bool) error {
+	if !c.connected.Load() {
+		return fmt.Errorf("not connected")
+	}
+	return c.sendJSON(map[string]any{
+		"type":      "client_pause",
+		"paused":    paused,
+		"timestamp": time.Now().UnixMilli(),
+	})
+}
+
+// ServerHTTPURL converts the wss:// relay URL to https:// for REST API calls.
+func (c *Client) ServerHTTPURL() string {
+	u := c.cfg.ServerURL
+	u = strings.TrimSuffix(u, "/ws")
+	u = strings.Replace(u, "wss://", "https://", 1)
+	u = strings.Replace(u, "ws://", "http://", 1)
+	return u
+}
+
+// APIKey returns the current API key (for REST calls).
+func (c *Client) APIKey() string {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	return c.cfg.APIKey
+}
+
+// DeleteSelf calls the server REST API to delete this client's wallet registration.
+func (c *Client) DeleteSelf() error {
+	url := c.ServerHTTPURL() + "/api/clients/me"
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-API-Key", c.APIKey())
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
 }
 
 type authError struct {

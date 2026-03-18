@@ -23,7 +23,7 @@ type SettingsSnapshot struct {
 	Version        string
 }
 
-func renderSettings(s *SettingsSnapshot, connected bool) string {
+func renderSettings(s *SettingsSnapshot, connected bool, paused bool) string {
 	if s == nil {
 		return styleHeaderDim.Render("  No settings available")
 	}
@@ -89,6 +89,20 @@ func renderSettings(s *SettingsSnapshot, connected bool) string {
 		sb.WriteString("\n")
 		sb.WriteString("  " + styleHeaderDim.Render(pad("Version", 18)) + styleHeaderDim.Render(s.Version) + "\n")
 	}
+
+	// Edit options
+	sb.WriteString("\n")
+	sb.WriteString("  " + styleKeybindKey.Render("[1]") + styleKeybindHint.Render(" Update API key   "))
+	sb.WriteString(styleKeybindKey.Render("[2]") + styleKeybindHint.Render(" Encrypt wallet   "))
+	sb.WriteString(styleKeybindKey.Render("[3]") + styleKeybindHint.Render(" Risk limits") + "\n")
+	sb.WriteString("  " + styleKeybindKey.Render("[4]") + styleKeybindHint.Render(" Ticker assets    "))
+
+	pauseLabel := " Pause"
+	if paused {
+		pauseLabel = " Resume"
+	}
+	sb.WriteString(styleKeybindKey.Render("[5]") + styleKeybindHint.Render(pauseLabel) + "           ")
+	sb.WriteString(styleKeybindKey.Render("[6]") + styleKeybindHint.Render(" Delete wallet") + "\n")
 
 	return sb.String()
 }

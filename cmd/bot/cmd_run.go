@@ -123,13 +123,18 @@ func cmdRun(args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := run(ctx, cancel, cfg, tuiHandler, multiHandler, logFile); err != nil {
+	configPath := "config.json"
+	if *configFile != "" {
+		configPath = *configFile
+	}
+
+	if err := run(ctx, cancel, cfg, configPath, tuiHandler, multiHandler, logFile); err != nil {
 		slog.Error("bot error", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tuiHandler *TUILogHandler, multiHandler *MultiHandler, logFile *os.File) error {
+func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, configPath string, tuiHandler *TUILogHandler, multiHandler *MultiHandler, logFile *os.File) error {
 	if logFile != nil {
 		defer logFile.Close()
 	}
@@ -221,18 +226,25 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 		Version:        version,
 	}
 
-	m := newTUIModel(
-		instanceName,
-		signer.SourceAddress(),
-		cfg.Network,
-		state,
-		spotUSDC,
-		relayClient.Connected(),
-		tradeStore,
-		settings,
-		tuiHandler,
-		cancel,
-	)
+	m := newTUIModel(tuiConfig{
+		instanceName:   instanceName,
+		walletAddr:     signer.SourceAddress(),
+		network:        cfg.Network,
+		state:          state,
+		spotUSDC:       spotUSDC,
+		connected:      relayClient.Connected(),
+		tradeStore:     tradeStore,
+		settings:       settings,
+		logHandler:     tuiHandler,
+		quitFunc:       cancel,
+		configPath:     configPath,
+		relayClient:    relayClient,
+		relayServerURL: cfg.Relay.ServerURL,
+		isAgentMode:    cfg.IsAgentMode,
+		mainWalletAddr: cfg.WalletAddr,
+		validator:      validator,
+		tickerAssets:   cfg.TickerAssets,
+	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	tuiHandler.SetProgram(p)
@@ -275,7 +287,18 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, tui
 					p.Send(accountUpdateMsg{state: s, spotUSDC: su, connected: relayClient.Connected()})
 					writeHeartbeat(relayClient.Connected(), s, su)
 				}
+				// Fetch ticker prices
+				if mids, err := client.GetAllMids(ctx); err == nil {
+					p.Send(tickerUpdateMsg(parseAllMids(mids)))
+				}
 			}
+		}
+	}()
+
+	// Initial ticker fetch
+	go func() {
+		if mids, err := client.GetAllMids(ctx); err == nil {
+			p.Send(tickerUpdateMsg(parseAllMids(mids)))
 		}
 	}()
 
