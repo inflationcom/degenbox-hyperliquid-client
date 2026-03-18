@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -294,18 +295,19 @@ func saveTickerAssetsToConfig(configPath string, enabled map[string]bool) error 
 
 type tickerAsset struct {
 	Display string // shown in TUI
-	Market  string // HL market name for allMids
+	Market  string // HL market name for allMids / l2Book
+	IsXYZ   bool   // xyz markets need l2Book (not in allMids)
 }
 
 var tickerAssetList = []tickerAsset{
-	{"BTC", "BTC"},
-	{"ETH", "ETH"},
-	{"SOL", "SOL"},
-	{"HYPE", "HYPE"},
-	{"GOLD", "xyz:GOLD"},
-	{"SILVER", "xyz:SILVER"},
-	{"OIL", "xyz:CL"},
-	{"XYZ100", "xyz:XYZ100"},
+	{"BTC", "BTC", false},
+	{"ETH", "ETH", false},
+	{"SOL", "SOL", false},
+	{"HYPE", "HYPE", false},
+	{"GOLD", "xyz:GOLD", true},
+	{"SILVER", "xyz:SILVER", true},
+	{"OIL", "xyz:CL", true},
+	{"XYZ100", "xyz:XYZ100", true},
 }
 
 var defaultTickerAssets = []string{"BTC", "ETH", "SOL"}
@@ -350,6 +352,35 @@ func renderTickerLine(prices map[string]float64, enabled map[string]bool) string
 		return ""
 	}
 	return "  " + strings.Join(parts, "  ")
+}
+
+// fetchTickerPrices fetches allMids for regular assets and l2Book for xyz assets.
+func fetchTickerPrices(ctx context.Context, client interface {
+	GetAllMids(context.Context) (map[string]string, error)
+	GetL2Mid(context.Context, string) (float64, error)
+}, enabled map[string]bool) map[string]float64 {
+	result := make(map[string]float64)
+
+	// Fetch allMids for regular perp assets
+	if mids, err := client.GetAllMids(ctx); err == nil {
+		for k, v := range mids {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				result[k] = f
+			}
+		}
+	}
+
+	// Fetch l2Book mid for xyz assets that are enabled
+	for _, ta := range tickerAssetList {
+		if !ta.IsXYZ || !enabled[ta.Display] {
+			continue
+		}
+		if mid, err := client.GetL2Mid(ctx, ta.Market); err == nil {
+			result[ta.Market] = mid
+		}
+	}
+
+	return result
 }
 
 // parseAllMids converts the string map from HL API to float64 map

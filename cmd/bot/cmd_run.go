@@ -287,19 +287,15 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, con
 					p.Send(accountUpdateMsg{state: s, spotUSDC: su, connected: relayClient.Connected()})
 					writeHeartbeat(relayClient.Connected(), s, su)
 				}
-				// Fetch ticker prices
-				if mids, err := client.GetAllMids(ctx); err == nil {
-					p.Send(tickerUpdateMsg(parseAllMids(mids)))
-				}
+				// Fetch ticker prices (allMids + l2Book for xyz)
+				p.Send(tickerUpdateMsg(fetchTickerPrices(ctx, client, m.tickerEnabled)))
 			}
 		}
 	}()
 
 	// Initial ticker fetch
 	go func() {
-		if mids, err := client.GetAllMids(ctx); err == nil {
-			p.Send(tickerUpdateMsg(parseAllMids(mids)))
-		}
+		p.Send(tickerUpdateMsg(fetchTickerPrices(ctx, client, m.tickerEnabled)))
 	}()
 
 	sigCh := make(chan os.Signal, 1)

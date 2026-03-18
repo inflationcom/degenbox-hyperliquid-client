@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -283,6 +284,29 @@ func (c *Client) GetAllMids(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 	return resp, nil
+}
+
+// GetL2Mid fetches the mid price for a single asset from its order book.
+// Useful for xyz (prediction) markets that aren't included in allMids.
+func (c *Client) GetL2Mid(ctx context.Context, coin string) (float64, error) {
+	req := map[string]any{"type": "l2Book", "coin": coin}
+	var resp struct {
+		Levels [2][]struct {
+			Px string `json:"px"`
+		} `json:"levels"`
+	}
+	if err := c.postInfo(ctx, req, &resp); err != nil {
+		return 0, err
+	}
+	if len(resp.Levels[0]) == 0 || len(resp.Levels[1]) == 0 {
+		return 0, fmt.Errorf("no liquidity for %s", coin)
+	}
+	ask, err1 := strconv.ParseFloat(resp.Levels[0][0].Px, 64)
+	bid, err2 := strconv.ParseFloat(resp.Levels[1][0].Px, 64)
+	if err1 != nil || err2 != nil {
+		return 0, fmt.Errorf("invalid price data for %s", coin)
+	}
+	return (ask + bid) / 2, nil
 }
 
 func (c *Client) GetMaxLeverage(market string) (int, error) {
