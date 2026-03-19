@@ -67,6 +67,8 @@ func (c *Client) executeStep(ctx context.Context, market string, step ExecutionS
 		return c.executeUpdateLeverage(ctx, step)
 	case "cancel_by_cloid":
 		return c.executeCancelByCloid(ctx, step)
+	case "cancel_by_oid":
+		return c.executeCancelByOid(ctx, step)
 	case "modify_order":
 		return c.executeModifyOrder(ctx, step)
 	default:
@@ -124,6 +126,14 @@ func (c *Client) executeUpdateLeverage(ctx context.Context, step ExecutionStep) 
 
 func (c *Client) executeCancelByCloid(ctx context.Context, step ExecutionStep) StepResult {
 	err := c.hlClient.CancelOrderByCloid(ctx, step.Cancels)
+	if err != nil {
+		return StepResult{Action: step.Action, Success: false, Error: err.Error()}
+	}
+	return StepResult{Action: step.Action, Success: true}
+}
+
+func (c *Client) executeCancelByOid(ctx context.Context, step ExecutionStep) StepResult {
+	err := c.hlClient.CancelOrder(ctx, step.OidCancels)
 	if err != nil {
 		return StepResult{Action: step.Action, Success: false, Error: err.Error()}
 	}

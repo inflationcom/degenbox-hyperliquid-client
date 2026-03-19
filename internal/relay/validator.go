@@ -51,6 +51,11 @@ func (v *RiskValidator) validateStep(market string, step *ExecutionStep) error {
 			return fmt.Errorf("empty cancels list")
 		}
 		return nil
+	case "cancel_by_oid":
+		if len(step.OidCancels) == 0 {
+			return fmt.Errorf("empty oid cancels list")
+		}
+		return nil
 	case "modify_order":
 		for j, mod := range step.Modifications {
 			if err := v.validateOrder(mod.Order); err != nil {

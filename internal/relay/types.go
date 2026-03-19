@@ -60,6 +60,7 @@ type ExecutionStep struct {
 	Orders        []hyperliquid.OrderWire      `json:"orders,omitempty"`
 	Grouping      string                       `json:"grouping,omitempty"`
 	Cancels       []hyperliquid.CancelCloidSpec `json:"cancels,omitempty"`
+	OidCancels    []hyperliquid.CancelSpec      `json:"oid_cancels,omitempty"`
 	Asset         int                          `json:"asset,omitempty"`
 	Leverage      int                          `json:"leverage,omitempty"`
 	IsCross       bool                         `json:"is_cross,omitempty"`

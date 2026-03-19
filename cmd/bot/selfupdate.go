@@ -1,22 +1,55 @@
 package main
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 const releaseBaseURL = "https://github.com/inflationcom/degenbox-hyperliquid-client/releases/latest/download"
 
-func buildDownloadURL() string {
+func buildBinaryName() string {
 	name := fmt.Sprintf("bot-%s-%s", runtime.GOOS, runtime.GOARCH)
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	return releaseBaseURL + "/" + name
+	return name
+}
+
+func buildDownloadURL() string {
+	return releaseBaseURL + "/" + buildBinaryName()
+}
+
+// fetchExpectedHash downloads sha256sums.txt from the release and returns
+// the expected hex hash for the current platform binary.
+func fetchExpectedHash() (string, error) {
+	resp, err := http.Get(releaseBaseURL + "/sha256sums.txt") //nolint:gosec
+	if err != nil {
+		return "", fmt.Errorf("fetch checksums: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("checksums file not found: HTTP %d", resp.StatusCode)
+	}
+
+	binaryName := buildBinaryName()
+	scanner := bufio.NewScanner(io.LimitReader(resp.Body, 1<<16))
+	for scanner.Scan() {
+		// Format: "<hex>  <filename>" or "<hex> <filename>"
+		parts := strings.Fields(scanner.Text())
+		if len(parts) >= 2 && parts[1] == binaryName {
+			return parts[0], nil
+		}
+	}
+	return "", fmt.Errorf("no checksum found for %s", binaryName)
 }
 
 func performUpdate() error {
@@ -27,6 +60,12 @@ func performUpdate() error {
 	execPath, err = filepath.EvalSymlinks(execPath)
 	if err != nil {
 		return fmt.Errorf("could not resolve binary path: %w", err)
+	}
+
+	// Fetch expected checksum before downloading
+	expectedHash, err := fetchExpectedHash()
+	if err != nil {
+		return fmt.Errorf("checksum verification unavailable: %w", err)
 	}
 
 	url := buildDownloadURL()
@@ -52,11 +91,19 @@ func performUpdate() error {
 		return fmt.Errorf("download failed: HTTP %d from %s", resp.StatusCode, url)
 	}
 
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	// Download and compute SHA-256 in one pass
+	hasher := sha256.New()
+	if _, err := io.Copy(tmp, io.TeeReader(resp.Body, hasher)); err != nil {
 		tmp.Close()
 		return fmt.Errorf("download incomplete: %w", err)
 	}
 	tmp.Close()
+
+	// Verify checksum
+	actualHash := hex.EncodeToString(hasher.Sum(nil))
+	if !strings.EqualFold(actualHash, expectedHash) {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s — download may be corrupted or tampered", expectedHash, actualHash)
+	}
 
 	// Make executable on Unix
 	if runtime.GOOS != "windows" {
