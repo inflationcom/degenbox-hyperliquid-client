@@ -22,6 +22,10 @@ type RegistrationResult struct {
 func Register(serverBaseURL, token, name, walletAddr, mainWalletAddr, network string) (*RegistrationResult, error) {
 	baseURL := strings.TrimRight(serverBaseURL, "/")
 
+	if !strings.HasPrefix(baseURL, "https://") {
+		return nil, fmt.Errorf("server URL must use HTTPS (got %q)", baseURL)
+	}
+
 	payload := map[string]any{
 		"name":           name,
 		"wallet_address": walletAddr,

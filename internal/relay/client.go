@@ -408,6 +408,11 @@ func (c *Client) handleInstruction(data []byte) {
 
 	if !c.rateLimit.Allow() {
 		slog.Warn("rate limit exceeded", "id", instr.InstructionID)
+		c.sendJSON(instructionResultMsg{
+			relayMsg:      relayMsg{Type: "instruction_result", Timestamp: time.Now().UnixMilli()},
+			InstructionID: instr.InstructionID,
+			Results:       []StepResult{{Action: "rate_limit", Success: false, Error: "rate limit exceeded"}},
+		})
 		return
 	}
 

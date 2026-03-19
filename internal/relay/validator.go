@@ -113,7 +113,14 @@ func (v *RiskValidator) validateOrder(order hyperliquid.OrderWire) error {
 		return fmt.Errorf("invalid size: %s", order.S)
 	}
 
-	notional := size * price
+	// For trigger orders, use trigger price for notional (order.P is a slippage price, often near-zero)
+	notionalPrice := price
+	if order.T.Trigger != nil {
+		if tp, tErr := strconv.ParseFloat(order.T.Trigger.TriggerPx, 64); tErr == nil && tp > 0 {
+			notionalPrice = tp
+		}
+	}
+	notional := size * notionalPrice
 	if notional > v.limits.MaxOrderSizeUSD {
 		return fmt.Errorf("order notional $%.0f exceeds limit $%.0f", notional, v.limits.MaxOrderSizeUSD)
 	}

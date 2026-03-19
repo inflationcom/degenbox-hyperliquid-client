@@ -17,7 +17,7 @@ func (c *Client) executeInstruction(instr *ExecutionInstruction) {
 		"steps", len(instr.Steps),
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
 
 	var results []StepResult
