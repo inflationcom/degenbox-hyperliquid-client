@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ const (
 	viewEdit
 	viewUpdateConfirm
 	viewUpdateProgress
+	viewKillConfirm
 )
 
 const maxLogLines = 1000
@@ -48,6 +50,7 @@ type clockTickMsg time.Time
 type updateDoneMsg struct{}
 type updateErrorMsg struct{ err error }
 type tickerUpdateMsg map[string]float64
+type killResultMsg struct{ err error }
 
 type tuiModel struct {
 	width, height int
@@ -83,6 +86,11 @@ type tuiModel struct {
 	mainWalletAddr string
 	validator      *relay.RiskValidator
 
+	// Kill switch
+	hlClient   *hyperliquid.Client
+	killStatus string // "", "running", "done", "error"
+	killError  string
+
 	// Ticker
 	tickerPrices  map[string]float64
 	tickerEnabled map[string]bool
@@ -115,6 +123,7 @@ type tuiConfig struct {
 	mainWalletAddr string
 	validator      *relay.RiskValidator
 	tickerAssets   []string
+	hlClient       *hyperliquid.Client
 }
 
 func newTUIModel(c tuiConfig) tuiModel {
@@ -140,6 +149,7 @@ func newTUIModel(c tuiConfig) tuiModel {
 		isAgentMode:    c.isAgentMode,
 		mainWalletAddr: c.mainWalletAddr,
 		validator:      c.validator,
+		hlClient:       c.hlClient,
 		tickerPrices:   make(map[string]float64),
 		tickerEnabled:  buildTickerEnabled(c.tickerAssets),
 	}
@@ -256,6 +266,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.updateAvailable {
 					m.activeView = viewUpdateConfirm
 				}
+			case "K":
+				m.activeView = viewKillConfirm
+				m.killStatus = ""
+				m.killError = ""
 			case " ":
 				// Space toggles pause from any view
 				if m.relayClient != nil {
@@ -265,6 +279,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case "esc", "enter":
+				m.activeView = viewLogs
+			}
+		case viewKillConfirm:
+			switch msg.String() {
+			case "y", "Y":
+				m.killStatus = "running"
+				return m, m.executeKillSwitch()
+			case "n", "esc":
 				m.activeView = viewLogs
 			}
 		}
@@ -362,6 +384,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.edit.step = editStepDeleteDone
 		m.edit.err = msg.err.Error()
 
+	case killResultMsg:
+		if msg.err != nil {
+			m.killStatus = "error"
+			m.killError = msg.err.Error()
+		} else {
+			m.killStatus = "done"
+			// Auto-pause after kill switch
+			if m.relayClient != nil {
+				if err := m.relayClient.SendPause(true); err == nil {
+					m.paused = true
+				}
+			}
+		}
+
 	case updateDoneMsg:
 		m.updateStatus = "restarting"
 		m.updateCompleted = true
@@ -417,6 +453,10 @@ func (m tuiModel) View() string {
 	case viewEdit:
 		title := styleViewTitle.Render("  Settings")
 		body := renderEdit(&m.edit, m.settings, m.tickerEnabled)
+		content = title + "\n" + body
+	case viewKillConfirm:
+		title := styleViewTitle.Render("  KILL SWITCH")
+		body := m.renderKillSwitch()
 		content = title + "\n" + body
 	case viewUpdateConfirm:
 		title := styleViewTitle.Render("  Update")
@@ -599,25 +639,7 @@ func (m tuiModel) renderPositionsView() string {
 }
 
 func (m tuiModel) headerLines() int {
-	lines := 8 // logo (6: leading newline + 5 art) + blank + name
-	if m.updateAvailable {
-		lines += 1
-	}
-	lines += 2 // separator + wallet/network
-	if m.accountState != nil {
-		lines += 2 // equity/margin + free/positions
-	}
-	if m.callerName != "" {
-		lines += 1
-	}
-	if m.targetWallet != "" {
-		lines += 1
-	}
-	if renderTickerLine(m.tickerPrices, m.tickerEnabled) != "" {
-		lines += 1
-	}
-	lines += 1 // bottom separator
-	return lines
+	return strings.Count(m.renderHeader(), "\n")
 }
 
 const footerLines = 4 // separator + status + blank + keybinds
@@ -844,4 +866,46 @@ func (m tuiModel) handleEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m tuiModel) renderKillSwitch() string {
+	var sb strings.Builder
+	warn := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF4444"))
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+
+	switch m.killStatus {
+	case "running":
+		sb.WriteString("\n  " + warn.Render("Cancelling all orders and closing all positions..."))
+	case "done":
+		sb.WriteString("\n  " + lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#44FF44")).Render("All orders cancelled and positions closed."))
+		sb.WriteString("\n  " + dim.Render("Bot is now paused. Press [esc] to return."))
+	case "error":
+		sb.WriteString("\n  " + warn.Render("Kill switch error: "+m.killError))
+		sb.WriteString("\n  " + dim.Render("Press [esc] to return."))
+	default:
+		sb.WriteString("\n  " + warn.Render("EMERGENCY KILL SWITCH"))
+		sb.WriteString("\n")
+		sb.WriteString("\n  This will:")
+		sb.WriteString("\n    1. Cancel ALL open orders")
+		sb.WriteString("\n    2. Market-close ALL positions")
+		sb.WriteString("\n    3. Pause the bot")
+		sb.WriteString("\n")
+		sb.WriteString("\n  " + warn.Render("Are you sure? [y/n]"))
+	}
+	return sb.String()
+}
+
+func (m tuiModel) executeKillSwitch() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := m.hlClient.CancelAllOrders(ctx); err != nil {
+			return killResultMsg{err: fmt.Errorf("cancel orders: %w", err)}
+		}
+		if err := m.hlClient.CloseAllPositions(ctx); err != nil {
+			return killResultMsg{err: fmt.Errorf("close positions: %w", err)}
+		}
+		return killResultMsg{}
+	}
 }

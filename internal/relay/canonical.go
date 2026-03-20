@@ -59,6 +59,13 @@ func instructionCanonical(instr *ExecutionInstruction) ([]byte, error) {
 			}
 			s["modifications"] = g
 		}
+		if len(step.OidCancels) > 0 {
+			g, err := toGeneric(step.OidCancels)
+			if err != nil {
+				return nil, fmt.Errorf("canonical: oid_cancels: %w", err)
+			}
+			s["oid_cancels"] = g
+		}
 
 		steps[i] = s
 	}

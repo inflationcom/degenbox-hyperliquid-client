@@ -203,7 +203,13 @@ func (w *setupWizard) updateRelay(configPath string, cfg *config.Config) {
 
 func httpToWS(serverURL string) string {
 	u := strings.TrimRight(serverURL, "/")
-	u = strings.Replace(strings.Replace(u, "https://", "wss://", 1), "http://", "ws://", 1)
+	// Only convert HTTPS → WSS; refuse to silently downgrade HTTP → WS
+	if strings.HasPrefix(u, "https://") {
+		u = strings.Replace(u, "https://", "wss://", 1)
+	} else if strings.HasPrefix(u, "http://") {
+		fmt.Fprintf(os.Stderr, "Warning: server URL uses HTTP (insecure). Connection will be rejected.\n")
+		u = strings.Replace(u, "http://", "ws://", 1)
+	}
 	return u + "/ws"
 }
 

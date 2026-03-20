@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -362,6 +364,89 @@ func (c *Client) GetMaxLeverage(market string) (int, error) {
 		return 0, fmt.Errorf("unknown market: %s", market)
 	}
 	return info.MaxLeverage, nil
+}
+
+// CancelAllOrders fetches all open orders and cancels them.
+func (c *Client) CancelAllOrders(ctx context.Context) error {
+	orders, err := c.GetOpenOrders(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch open orders: %w", err)
+	}
+	if len(orders) == 0 {
+		return nil
+	}
+
+	var cancels []CancelSpec
+	for _, o := range orders {
+		assetID, err := c.GetAssetID(o.Coin)
+		if err != nil {
+			continue
+		}
+		cancels = append(cancels, CancelSpec{A: assetID, O: o.Oid})
+	}
+	if len(cancels) == 0 {
+		return nil
+	}
+	return c.CancelOrder(ctx, cancels)
+}
+
+// CloseAllPositions market-closes all open positions.
+func (c *Client) CloseAllPositions(ctx context.Context) error {
+	state, err := c.GetClearinghouseState(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch positions: %w", err)
+	}
+
+	var orders []OrderWire
+	for _, ap := range state.AssetPositions {
+		szi, _ := strconv.ParseFloat(ap.Position.Szi, 64)
+		if szi == 0 {
+			continue
+		}
+		assetID, err := c.GetAssetID(ap.Position.Coin)
+		if err != nil {
+			continue
+		}
+		// Close = opposite side, same size
+		isBuy := szi < 0
+
+		// Format size with correct decimal precision for the asset
+		szDecimals := 4 // safe default
+		if info, infoErr := c.GetAssetInfo(ap.Position.Coin); infoErr == nil {
+			szDecimals = info.SzDecimals
+		}
+		sz := strconv.FormatFloat(math.Abs(szi), 'f', szDecimals, 64)
+
+		// Use a very aggressive slippage price to ensure fill
+		oraclePx, _ := c.GetOraclePrice(ap.Position.Coin)
+		oracle, _ := strconv.ParseFloat(oraclePx, 64)
+		if oracle <= 0 {
+			slog.Error("kill switch: oracle price unavailable, skipping position",
+				"coin", ap.Position.Coin, "szi", ap.Position.Szi)
+			continue
+		}
+		var slippagePx float64
+		if isBuy {
+			slippagePx = oracle * 1.05 // 5% above oracle for buys
+		} else {
+			slippagePx = oracle * 0.95 // 5% below oracle for sells
+		}
+
+		orders = append(orders, OrderWire{
+			A: assetID,
+			B: isBuy,
+			P: fmt.Sprintf("%g", slippagePx),
+			S: sz,
+			R: true, // reduce-only
+			T: OrderType{Limit: &LimitSpec{Tif: "Ioc"}},
+		})
+	}
+	if len(orders) == 0 {
+		return nil
+	}
+
+	_, err = c.PlaceOrder(ctx, orders, "na")
+	return err
 }
 
 func (c *Client) postInfo(ctx context.Context, req any, resp any) error {

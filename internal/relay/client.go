@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,11 +20,13 @@ import (
 )
 
 type Config struct {
-	ServerURL       string
-	APIKey          string
-	ClientID        int
-	ServerPublicKey string
-	Version         string
+	ServerURL            string
+	APIKey               string
+	ClientID             int
+	ServerPublicKey      string
+	Version              string
+	MaxConsecutiveLosses int
+	CooldownMinutes      int
 }
 
 type Client struct {
@@ -46,6 +49,10 @@ type Client struct {
 	rateLimit      *rateLimiter
 	serverPubKey   ed25519.PublicKey
 	recorder       TradeRecorder
+
+	sigFailures    []time.Time
+	sigFailuresMu  sync.Mutex
+	circuitBreaker *CircuitBreaker
 	onConfigUpdate     func(ConfigUpdateMsg)
 	onVersionInfo      func(VersionInfoMsg)
 	onAuthInfo         func(AuthInfoMsg)
@@ -66,16 +73,22 @@ func NewClient(cfg Config, hlClient *hyperliquid.Client, validator *RiskValidato
 		execQueue:      make(chan *ExecutionInstruction, 16),
 	}
 
-	if cfg.ServerPublicKey != "" {
-		pubBytes, err := hex.DecodeString(cfg.ServerPublicKey)
-		if err != nil || len(pubBytes) != ed25519.PublicKeySize {
-			return nil, fmt.Errorf("invalid server_public_key: must be 64-char hex (32 bytes)")
-		}
-		c.serverPubKey = ed25519.PublicKey(pubBytes)
-		slog.Info("Ed25519 instruction verification enabled")
-	} else {
-		slog.Warn("no server_public_key configured, signatures unverified")
+	if cfg.ServerPublicKey == "" {
+		return nil, fmt.Errorf("server_public_key is required — run 'bot setup' to configure")
 	}
+	pubBytes, err := hex.DecodeString(cfg.ServerPublicKey)
+	if err != nil || len(pubBytes) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("invalid server_public_key: must be 64-char hex (32 bytes)")
+	}
+	c.serverPubKey = ed25519.PublicKey(pubBytes)
+	slog.Info("Ed25519 instruction verification enabled")
+
+	cooldown := time.Duration(cfg.CooldownMinutes) * time.Minute
+	c.circuitBreaker = NewCircuitBreaker(cfg.MaxConsecutiveLosses, cooldown, func() {
+		c.paused.Store(true)
+		_ = c.SendPause(true)
+		slog.Error("circuit breaker: auto-paused after consecutive failures")
+	})
 
 	return c, nil
 }
@@ -374,12 +387,14 @@ func (c *Client) handleInstruction(data []byte) {
 				InstructionID: instr.InstructionID,
 				Results:       []StepResult{{Action: "verify_signature", Success: false, Error: "missing signature"}},
 			})
+			c.recordSigFailure()
 			return
 		}
 
 		sigBytes, err := hex.DecodeString(instr.Signature)
 		if err != nil {
 			slog.Error("instruction REJECTED: invalid signature hex", "id", instr.InstructionID)
+			c.recordSigFailure()
 			return
 		}
 
@@ -391,6 +406,7 @@ func (c *Client) handleInstruction(data []byte) {
 				InstructionID: instr.InstructionID,
 				Results:       []StepResult{{Action: "verify_signature", Success: false, Error: "canonical encoding failed"}},
 			})
+			c.recordSigFailure()
 			return
 		}
 		if !ed25519.Verify(c.serverPubKey, canonical, sigBytes) {
@@ -400,6 +416,7 @@ func (c *Client) handleInstruction(data []byte) {
 				InstructionID: instr.InstructionID,
 				Results:       []StepResult{{Action: "verify_signature", Success: false, Error: "invalid signature"}},
 			})
+			c.recordSigFailure()
 			return
 		}
 
@@ -425,6 +442,20 @@ func (c *Client) handleInstruction(data []byte) {
 			Results:       []StepResult{{Action: "validate", Success: false, Error: err.Error()}},
 		})
 		return
+	}
+
+	// Portfolio-level risk check (total exposure, positions per market)
+	if notional := estimateInstructionNotional(instr); notional > 0 {
+		if err := c.validator.ValidatePortfolio(c.ctx, instr.Market, notional); err != nil {
+			slog.Error("instruction REJECTED by portfolio check",
+				"id", instr.InstructionID, "reason", err)
+			c.sendJSON(instructionResultMsg{
+				relayMsg:      relayMsg{Type: "instruction_result", Timestamp: time.Now().UnixMilli()},
+				InstructionID: instr.InstructionID,
+				Results:       []StepResult{{Action: "validate_portfolio", Success: false, Error: err.Error()}},
+			})
+			return
+		}
 	}
 
 	select {
@@ -564,10 +595,9 @@ func (e *authError) Error() string {
 }
 
 type rateLimiter struct {
-	mu     sync.Mutex
-	count  int
-	limit  int
-	window time.Time
+	mu         sync.Mutex
+	limit      int
+	timestamps []time.Time
 }
 
 func newRateLimiter(perMinute int) *rateLimiter {
@@ -575,8 +605,8 @@ func newRateLimiter(perMinute int) *rateLimiter {
 		perMinute = 30
 	}
 	return &rateLimiter{
-		limit:  perMinute,
-		window: time.Now(),
+		limit:      perMinute,
+		timestamps: make([]time.Time, 0, perMinute),
 	}
 }
 
@@ -585,11 +615,71 @@ func (r *rateLimiter) Allow() bool {
 	defer r.mu.Unlock()
 
 	now := time.Now()
-	if now.Sub(r.window) >= time.Minute {
-		r.count = 0
-		r.window = now
-	}
+	cutoff := now.Add(-time.Minute)
 
-	r.count++
-	return r.count <= r.limit
+	// Evict timestamps outside the sliding window
+	i := 0
+	for i < len(r.timestamps) && r.timestamps[i].Before(cutoff) {
+		i++
+	}
+	r.timestamps = r.timestamps[i:]
+
+	if len(r.timestamps) >= r.limit {
+		return false
+	}
+	r.timestamps = append(r.timestamps, now)
+	return true
+}
+
+const sigFailureThreshold = 5
+const sigFailureWindow = 60 * time.Second
+
+// recordSigFailure tracks signature verification failures and disconnects
+// if too many occur in a short window (possible server compromise or key mismatch).
+func (c *Client) recordSigFailure() {
+	c.sigFailuresMu.Lock()
+	defer c.sigFailuresMu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-sigFailureWindow)
+
+	// Evict old failures
+	i := 0
+	for i < len(c.sigFailures) && c.sigFailures[i].Before(cutoff) {
+		i++
+	}
+	c.sigFailures = c.sigFailures[i:]
+	c.sigFailures = append(c.sigFailures, now)
+
+	if len(c.sigFailures) >= sigFailureThreshold {
+		slog.Error("circuit breaker: too many signature failures, disconnecting",
+			"failures", len(c.sigFailures), "window", sigFailureWindow)
+		c.sigFailures = nil // reset
+		c.connMu.Lock()
+		if c.conn != nil {
+			c.conn.Close()
+		}
+		c.connMu.Unlock()
+	}
+}
+
+// estimateInstructionNotional sums the notional value of all place_order steps.
+func estimateInstructionNotional(instr *ExecutionInstruction) float64 {
+	var total float64
+	for _, step := range instr.Steps {
+		if step.Action != "place_order" {
+			continue
+		}
+		for _, order := range step.Orders {
+			price, _ := strconv.ParseFloat(order.P, 64)
+			size, _ := strconv.ParseFloat(order.S, 64)
+			if order.T.Trigger != nil {
+				if tp, err := strconv.ParseFloat(order.T.Trigger.TriggerPx, 64); err == nil && tp > 0 {
+					price = tp
+				}
+			}
+			total += size * price
+		}
+	}
+	return total
 }

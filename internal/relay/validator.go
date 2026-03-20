@@ -1,30 +1,47 @@
 package relay
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math"
 	"strconv"
+	"sync"
 
 	"github.com/inflationcom/degenbox-hyperliquid-client/internal/config"
 	"github.com/inflationcom/degenbox-hyperliquid-client/internal/hyperliquid"
 )
 
-type RiskValidator struct {
-	limits   config.RiskLimits
-	hlClient *hyperliquid.Client
+// AssetResolver abstracts the hyperliquid client methods needed for risk validation.
+type AssetResolver interface {
+	GetAssetName(id int) (string, error)
+	GetOraclePrice(market string) (string, error)
+	GetMaxLeverage(market string) (int, error)
+	GetClearinghouseState(ctx context.Context) (*hyperliquid.ClearinghouseState, error)
+	IsTestnet() bool
 }
 
-func NewRiskValidator(limits config.RiskLimits, hlClient *hyperliquid.Client) *RiskValidator {
+type RiskValidator struct {
+	mu       sync.RWMutex
+	limits   config.RiskLimits
+	hlClient AssetResolver
+}
+
+func NewRiskValidator(limits config.RiskLimits, hlClient AssetResolver) *RiskValidator {
 	return &RiskValidator{limits: limits, hlClient: hlClient}
 }
 
-// UpdateLimits hot-swaps the risk limits at runtime.
+// UpdateLimits hot-swaps the risk limits at runtime (thread-safe).
 func (v *RiskValidator) UpdateLimits(limits config.RiskLimits) {
+	v.mu.Lock()
 	v.limits = limits
+	v.mu.Unlock()
 }
 
 func (v *RiskValidator) Validate(instr *ExecutionInstruction) error {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
 	if len(instr.Steps) == 0 {
 		return fmt.Errorf("empty instruction (no steps)")
 	}
@@ -156,6 +173,56 @@ func (v *RiskValidator) validateOrder(order hyperliquid.OrderWire) error {
 						order.T.Trigger.TriggerPx, deviation, oraclePxStr, maxDev)
 				}
 			}
+		}
+	}
+
+	return nil
+}
+
+// ValidatePortfolio checks portfolio-level risk limits before placing new orders.
+// Returns nil if no portfolio limits are configured or if the check passes.
+func (v *RiskValidator) ValidatePortfolio(ctx context.Context, market string, newNotional float64) error {
+	v.mu.RLock()
+	limits := v.limits
+	v.mu.RUnlock()
+
+	if limits.MaxTotalExposureUSD == 0 && limits.MaxPositionsPerMarket == 0 {
+		return nil // no portfolio limits configured
+	}
+
+	state, err := v.hlClient.GetClearinghouseState(ctx)
+	if err != nil {
+		slog.Warn("portfolio check: failed to fetch account state, skipping", "error", err)
+		return nil // fail-open: don't block trading if info API is down
+	}
+
+	// Check total exposure
+	if limits.MaxTotalExposureUSD > 0 {
+		totalNtl, _ := strconv.ParseFloat(state.MarginSummary.TotalNtlPos, 64)
+		if totalNtl < 0 {
+			totalNtl = -totalNtl
+		}
+		projected := totalNtl + newNotional
+		if projected > limits.MaxTotalExposureUSD {
+			return fmt.Errorf("total exposure $%.0f + $%.0f new = $%.0f exceeds limit $%.0f",
+				totalNtl, newNotional, projected, limits.MaxTotalExposureUSD)
+		}
+	}
+
+	// Check positions per market
+	if limits.MaxPositionsPerMarket > 0 {
+		count := 0
+		for _, ap := range state.AssetPositions {
+			if ap.Position.Coin == market {
+				szi, _ := strconv.ParseFloat(ap.Position.Szi, 64)
+				if szi != 0 {
+					count++
+				}
+			}
+		}
+		if count >= limits.MaxPositionsPerMarket {
+			return fmt.Errorf("already have %d position(s) in %s (max %d)",
+				count, market, limits.MaxPositionsPerMarket)
 		}
 	}
 

@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/inflationcom/degenbox-hyperliquid-client/internal/config"
 	"github.com/inflationcom/degenbox-hyperliquid-client/internal/hyperliquid"
+	"github.com/inflationcom/degenbox-hyperliquid-client/internal/notify"
 	"github.com/inflationcom/degenbox-hyperliquid-client/internal/relay"
 	"golang.org/x/term"
 )
@@ -188,14 +189,36 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, con
 
 	tradeStore := NewTradeStore(200)
 
+	auditLog, err := relay.NewAuditLog("trades.jsonl")
+	if err != nil {
+		slog.Warn("could not open audit log", "error", err)
+	}
+	recorders := []relay.TradeRecorder{tradeStore}
+	if auditLog != nil {
+		recorders = append(recorders, auditLog)
+	}
+	if cfg.DiscordWebhookURL != "" {
+		dw := notify.NewDiscordWebhook(cfg.DiscordWebhookURL)
+		recorders = append(recorders, &discordRecorderAdapter{dw})
+		slog.Info("discord webhook notifications enabled")
+	}
+	var recorder relay.TradeRecorder
+	if len(recorders) == 1 {
+		recorder = recorders[0]
+	} else {
+		recorder = relay.NewMultiRecorder(recorders...)
+	}
+
 	validator := relay.NewRiskValidator(cfg.RiskLimits, client)
 	relayClient, err := relay.NewClient(relay.Config{
 		ServerURL:       cfg.Relay.ServerURL,
 		APIKey:          cfg.Relay.APIKey,
 		ClientID:        cfg.Relay.ClientID,
-		ServerPublicKey: cfg.Relay.ServerPublicKey,
-		Version:         version,
-	}, client, validator, tradeStore)
+		ServerPublicKey:      cfg.Relay.ServerPublicKey,
+		Version:              version,
+		MaxConsecutiveLosses: cfg.CircuitBreaker.MaxConsecutiveLosses,
+		CooldownMinutes:      cfg.CircuitBreaker.CooldownMinutes,
+	}, client, validator, recorder)
 	if err != nil {
 		return fmt.Errorf("relay setup failed: %w", err)
 	}
@@ -244,6 +267,7 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, con
 		mainWalletAddr: cfg.WalletAddr,
 		validator:      validator,
 		tickerAssets:   cfg.TickerAssets,
+		hlClient:       client,
 	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -316,6 +340,9 @@ func run(ctx context.Context, cancel context.CancelFunc, cfg *config.Config, con
 	}
 
 	relayClient.Stop()
+	if auditLog != nil {
+		auditLog.Close()
+	}
 	os.Remove(heartbeatPath())
 
 	if fm, ok := finalModel.(tuiModel); ok && fm.updateCompleted {
@@ -392,4 +419,20 @@ func parseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// discordRecorderAdapter wraps notify.DiscordWebhook as a relay.TradeRecorder.
+type discordRecorderAdapter struct {
+	dw *notify.DiscordWebhook
+}
+
+func (a *discordRecorderAdapter) RecordTrade(e relay.TradeEvent) {
+	a.dw.RecordTrade(notify.TradeEvent{
+		Time:     e.Time,
+		Market:   e.Market,
+		Action:   e.Action,
+		Success:  e.Success,
+		Error:    e.Error,
+		SignalID: e.SignalID,
+	})
 }

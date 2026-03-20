@@ -105,11 +105,12 @@ func (h *TUILogHandler) Handle(_ context.Context, r slog.Record) error {
 func (h *TUILogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	h.mu.Lock()
 	prog := h.program
+	existingAttrs := h.attrs
 	h.mu.Unlock()
 
-	newAttrs := make([]slog.Attr, len(h.attrs)+len(attrs))
-	copy(newAttrs, h.attrs)
-	copy(newAttrs[len(h.attrs):], attrs)
+	newAttrs := make([]slog.Attr, len(existingAttrs)+len(attrs))
+	copy(newAttrs, existingAttrs)
+	copy(newAttrs[len(existingAttrs):], attrs)
 
 	return &TUILogHandler{
 		level:   h.level,

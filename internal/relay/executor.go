@@ -37,6 +37,15 @@ func (c *Client) executeInstruction(instr *ExecutionInstruction) {
 			})
 		}
 
+		// Circuit breaker tracks place_order outcomes
+		if step.Action == "place_order" && c.circuitBreaker != nil {
+			if result.Success {
+				c.circuitBreaker.RecordSuccess()
+			} else {
+				c.circuitBreaker.RecordFailure()
+			}
+		}
+
 		if !result.Success {
 			slog.Error("step failed",
 				"market", instr.Market,

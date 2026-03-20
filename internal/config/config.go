@@ -22,17 +22,26 @@ type Config struct {
 	LogLevel   string      `json:"log_level"`
 	LogFormat  string      `json:"log_format"`
 	ClientName string      `json:"client_name"`
-	RiskLimits   RiskLimits `json:"risk_limits"`
-	TickerAssets []string   `json:"ticker_assets,omitempty"`
+	RiskLimits     RiskLimits     `json:"risk_limits"`
+	CircuitBreaker    CircuitBreaker `json:"circuit_breaker,omitempty"`
+	DiscordWebhookURL string         `json:"discord_webhook_url,omitempty"`
+	TickerAssets      []string       `json:"ticker_assets,omitempty"`
 }
 
 type RiskLimits struct {
-	MaxLeverage      int     `json:"max_leverage"`
-	MaxOrderSizeUSD  float64 `json:"max_order_size_usd"`
-	MaxPriceDevPct   float64 `json:"max_price_dev_pct"`
-	MaxOrdersPerStep int     `json:"max_orders_per_step"`
-	MaxStepsPerInstr int     `json:"max_steps_per_instr"`
-	MaxPerMinute     int     `json:"max_per_minute"`
+	MaxLeverage           int     `json:"max_leverage"`
+	MaxOrderSizeUSD       float64 `json:"max_order_size_usd"`
+	MaxPriceDevPct        float64 `json:"max_price_dev_pct"`
+	MaxOrdersPerStep      int     `json:"max_orders_per_step"`
+	MaxStepsPerInstr      int     `json:"max_steps_per_instr"`
+	MaxPerMinute          int     `json:"max_per_minute"`
+	MaxTotalExposureUSD   float64 `json:"max_total_exposure_usd,omitempty"`
+	MaxPositionsPerMarket int     `json:"max_positions_per_market,omitempty"`
+}
+
+type CircuitBreaker struct {
+	MaxConsecutiveLosses int `json:"max_consecutive_losses,omitempty"`
+	CooldownMinutes      int `json:"cooldown_minutes,omitempty"`
 }
 
 type RelayConfig struct {
